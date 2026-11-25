@@ -2,6 +2,7 @@ name: Build other extensions
 
 # Builds and publishes the extensions listed in EXTS (not Anime3rb), signed with the repo's
 # own release key (repository secrets). Only the listed entries of the repo branch index change.
+# Pushes build and test only; publishing to the repo branch happens only on a manual run.
 on:
   push:
     branches:
@@ -115,6 +116,7 @@ jobs:
           done
 
       - name: Clone repo branch
+        if: github.event_name == 'workflow_dispatch'
         run: |
           git clone --depth 1 --branch repo \
             "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" repo
@@ -122,12 +124,14 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Replace only the listed entries
+        if: github.event_name == 'workflow_dispatch'
         run: |
           PKGS=""
           for e in $EXTS; do PKGS="$PKGS ${e##*:}"; done
           python3 .github/scripts/update_index.py "$GITHUB_WORKSPACE/out" "$GITHUB_WORKSPACE/repo" "$GITHUB_WORKSPACE" "$SIGNING_FP" $PKGS
 
       - name: Push repo branch
+        if: github.event_name == 'workflow_dispatch'
         run: |
           cd repo
           git config user.name "github-actions"
