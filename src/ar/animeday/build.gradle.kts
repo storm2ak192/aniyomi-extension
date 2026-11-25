@@ -6,11 +6,17 @@ plugins {
 
 extension {
     name = "AnimeDay"
-    versionCode = 2
+    versionCode = 3
     contentWarning = ContentWarning.SAFE
 }
 
 android {
+    buildTypes {
+        named("release") {
+            proguardFile("proguard-rules.pro")
+        }
+    }
+
     sourceSets {
         getByName("main") {
             jniLibs.srcDir("jniLibs")
