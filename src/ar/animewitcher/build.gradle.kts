@@ -6,6 +6,14 @@ plugins {
 
 extension {
     name = "AnimeWitcher"
-    versionCode = 7
+    versionCode = 8
     contentWarning = ContentWarning.SAFE
+}
+
+android {
+    buildTypes {
+        named("release") {
+            proguardFile("proguard-rules.pro")
+        }
+    }
 }
