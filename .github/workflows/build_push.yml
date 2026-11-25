@@ -51,6 +51,13 @@ jobs:
           echo "SIGNING_FP=$FP" >> "$GITHUB_ENV"
           echo "Signing certificate SHA-256: $FP"
 
+      - name: Unit tests (parsing helpers)
+        continue-on-error: true
+        run: |
+          ./gradlew :src:ar:anime3rb:testDebugUnitTest -x spotlessKotlinCheck -x spotlessKotlin --stacktrace 2>&1 | tail -60
+          echo "== test result files"
+          find src/ar/anime3rb/build -name 'TEST-*.xml' -exec grep -h -o '<testsuite [^>]*' {} \;
+
       - name: Build Anime3rb only
         env:
           ALIAS: anime3rb
