@@ -6,7 +6,7 @@ plugins {
 
 extension {
     name = "Animerco"
-    versionCode = 1
+    versionCode = 2
     contentWarning = ContentWarning.SAFE
 }
 
