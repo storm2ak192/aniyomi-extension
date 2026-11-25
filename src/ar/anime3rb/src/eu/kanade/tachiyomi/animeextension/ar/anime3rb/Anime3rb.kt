@@ -8,12 +8,12 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.preference.EditTextPreference
-import androidx.preference.ListPreference
 import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.animesource.model.AnimeFilter
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
 import eu.kanade.tachiyomi.animesource.model.AnimesPage
 import eu.kanade.tachiyomi.animesource.model.Hoster
+import eu.kanade.tachiyomi.animesource.model.HttpServer
 import eu.kanade.tachiyomi.animesource.model.SAnime
 import eu.kanade.tachiyomi.animesource.model.SEpisode
 import eu.kanade.tachiyomi.animesource.model.Video
@@ -93,24 +93,7 @@ class Anime3rb : Source() {
                 ok
             }
         }.also(screen::addPreference)
-
-        ListPreference(screen.context).apply {
-            key = PREF_QUALITY
-            title = tr("الجودة المفضلة", "Preferred quality")
-            entries = arrayOf(
-                tr("الأعلى المتاحة", "Highest available"),
-                "1080p",
-                "720p",
-                "480p",
-            )
-            entryValues = arrayOf(QUALITY_BEST, "1080", "720", "480")
-            setDefaultValue(QUALITY_BEST)
-            summary = "%s"
-        }.also(screen::addPreference)
     }
-
-    private val preferredQuality: String
-        get() = preferences.getString(PREF_QUALITY, QUALITY_BEST) ?: QUALITY_BEST
 
     // ============================== Helpers ===============================
 
@@ -447,10 +430,7 @@ class Anime3rb : Source() {
 
 
 
-    private fun List<Video>.sortedByPreference(): List<Video> =
-        Anime3rbParsing.sortByQuality(this, preferredQuality) { it.resolution }
-
-    override fun List<Video>.sortVideos(): List<Video> = sortedByPreference()
+    override fun createHttpServer(): HttpServer? = HttpServer()
 
     companion object {
         private const val HOOK_JS =
@@ -464,8 +444,6 @@ class Anime3rb : Source() {
                 "return s.apply(this,arguments)}})();"
         private const val DEFAULT_DOMAIN = "https://anime3rb.com"
         private const val PREF_DOMAIN = "domain"
-        private const val PREF_QUALITY = "preferred_quality"
-        private const val QUALITY_BEST = "best"
         private const val PAGE_SIZE = 20
 
         private val EPISODE_URL = Regex("""/episode/([^/?#]+)/(\d+(?:\.\d+)?)""")
