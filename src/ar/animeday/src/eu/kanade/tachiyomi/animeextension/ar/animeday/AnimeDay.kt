@@ -4,7 +4,6 @@ import android.annotation.SuppressLint
 import android.provider.Settings
 import android.widget.Toast
 import androidx.preference.EditTextPreference
-import androidx.preference.ListPreference
 import eu.kanade.tachiyomi.animesource.model.HttpServer
 import extensions.utils.QualityUtils
 import java.util.Locale
@@ -54,14 +53,6 @@ class AnimeDay : Source() {
             }
         }.also(screen::addPreference)
 
-        ListPreference(screen.context).apply {
-            key = PREF_QUALITY
-            title = tr(screen, "الجودة المفضلة", "Preferred quality")
-            entries = arrayOf(tr(screen, "الأعلى المتاحة", "Highest available"), "FHD (1080p)", "HD (720p)", "SD (480p)")
-            entryValues = arrayOf(QualityUtils.BEST, "1080", "720", "480")
-            setDefaultValue(QualityUtils.BEST)
-            summary = "%s"
-        }.also(screen::addPreference)
     }
 
     private fun tr(screen: PreferenceScreen, ar: String, en: String): String {
@@ -70,16 +61,12 @@ class AnimeDay : Source() {
         return if (lang == "ar") ar else en
     }
 
-    private val preferredQuality: String
-        get() = preferences.getString(PREF_QUALITY, QualityUtils.BEST) ?: QualityUtils.BEST
 
     private val apiOverride: String?
         get() = preferences.getString(PREF_DOMAIN, "")?.trim()?.trimEnd('/')
             ?.takeIf { it.startsWith("https://") || it.startsWith("http://") }
             ?.let { "$it/v3.8/api" }
 
-    override fun List<Video>.sortVideos(): List<Video> =
-        QualityUtils.sortByQuality(this, preferredQuality) { it.resolution }
 
     /** The app starts this local server before handing a link to an external player; without one it reports a start failure. */
     override fun createHttpServer(): HttpServer? = HttpServer()
@@ -444,7 +431,6 @@ class AnimeDay : Source() {
 
     private companion object {
         const val PREF_DOMAIN = "domain"
-        const val PREF_QUALITY = "preferred_quality"
         const val DEFAULT_API = "https://20042026.site/v3.8/api"
         const val CONFIG_API = "https://backup-animeday.animegateshorts.workers.dev"
         const val REFERER = "https://www.anime-day.com/"
