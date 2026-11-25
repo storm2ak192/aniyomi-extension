@@ -2,7 +2,6 @@ package eu.kanade.tachiyomi.animeextension.ar.stardima
 
 import android.widget.Toast
 import androidx.preference.EditTextPreference
-import androidx.preference.ListPreference
 import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.animesource.model.AnimeFilter
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
@@ -54,14 +53,6 @@ class Stardima : Source() {
             }
         }.also(screen::addPreference)
 
-        ListPreference(screen.context).apply {
-            key = PREF_QUALITY
-            title = tr(screen, "الدقة المفضلة (عند توفرها)", "Preferred resolution (when the player reports it)")
-            entries = arrayOf(tr(screen, "الأعلى المتاحة", "Highest available"), "1080p", "720p", "480p")
-            entryValues = arrayOf(QualityUtils.BEST, "1080", "720", "480")
-            setDefaultValue(QualityUtils.BEST)
-            summary = "%s"
-        }.also(screen::addPreference)
     }
 
     private fun tr(screen: PreferenceScreen, ar: String, en: String): String {
@@ -70,11 +61,7 @@ class Stardima : Source() {
         return if (lang == "ar") ar else en
     }
 
-    private val preferredQuality: String
-        get() = preferences.getString(PREF_QUALITY, QualityUtils.BEST) ?: QualityUtils.BEST
 
-    override fun List<Video>.sortVideos(): List<Video> =
-        QualityUtils.sortByQuality(this, preferredQuality) { it.resolution }
 
     /** The app starts this local server before handing a link to an external player; without one it reports a start failure. */
     override fun createHttpServer(): HttpServer? = HttpServer()
@@ -303,4 +290,3 @@ private val PATH_RE = Regex("""/(tvshow|movie)/[0-9A-Za-z_-]+""")
 private const val PAGE_SIZE = 12
 private const val DEFAULT_DOMAIN = "https://watch-jz.stardima.com.im"
 private const val PREF_DOMAIN = "domain"
-private const val PREF_QUALITY = "preferred_quality"
