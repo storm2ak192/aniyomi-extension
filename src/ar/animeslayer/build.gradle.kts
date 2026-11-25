@@ -6,6 +6,14 @@ plugins {
 
 extension {
     name = "AnimeSlayer"
-    versionCode = 2
+    versionCode = 3
     contentWarning = ContentWarning.SAFE
+}
+
+android {
+    buildTypes {
+        named("release") {
+            proguardFile("proguard-rules.pro")
+        }
+    }
 }
