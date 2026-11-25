@@ -169,27 +169,27 @@ class Anime3rb : Source() {
     // =============================== Latest ===============================
 
     /**
-     * The "latest episodes" cards on the home page are episode-level, so every episode that
-     * is newly published appears here under its series.
+     * The site's own "latest episodes" feed: the home page grid, whose "load more" button fetches
+     * `/?page=N` with the XMLHttpRequest header and gets back a fragment of 30 episode cards
+     * (empty once the feed is over). Each card is one episode, shown as "Title - Episode N".
+     * The entry url carries an "#epN" marker so every episode is its own card; the marker is
+     * dropped before any request.
      */
-    override fun latestUpdatesRequest(page: Int): Request = GET("$baseUrl/", headers)
+    override fun latestUpdatesRequest(page: Int): Request = GET(
+        "$baseUrl/?page=$page",
+        headers.newBuilder().add("X-Requested-With", "XMLHttpRequest").build(),
+    )
 
     override fun latestUpdatesParse(response: Response): AnimesPage {
-        val document = Jsoup.parse(response.use { it.body.string() }, baseUrl)
-        val seen = LinkedHashSet<String>()
-        val animes = document.select("a[href*=/episode/]:has(.title-name)").mapNotNull { card ->
-            val match = EPISODE_URL.find(card.attr("href")) ?: return@mapNotNull null
-            val path = "/titles/${match.groupValues[1]}"
-            if (!seen.add(path)) return@mapNotNull null
-            val title = card.selectFirst(".title-name")?.text()?.trim().orEmpty()
-            if (title.isEmpty()) return@mapNotNull null
+        val items = Anime3rbParsing.parseLatestFeed(response.use { it.body.string() })
+        val animes = items.map { item ->
             SAnime.create().apply {
-                url = path
-                this.title = title
-                thumbnail_url = imageUrl(card)
+                url = "/titles/${item.slug}#ep${item.number}"
+                title = "${item.title} - ${item.label}"
+                thumbnail_url = item.image
             }
         }
-        return AnimesPage(animes, false)
+        return AnimesPage(animes, items.isNotEmpty())
     }
 
     // =============================== Search ===============================
@@ -296,7 +296,7 @@ class Anime3rb : Source() {
     // =============================== Details ==============================
 
     override suspend fun getAnimeDetails(anime: SAnime): SAnime {
-        val document = getDocument(absolute(anime.url))
+        val document = getDocument(absolute(anime.url.substringBefore('#')))
         return SAnime.create().apply {
             url = anime.url
             title = anime.title
@@ -323,7 +323,7 @@ class Anime3rb : Source() {
     // ============================== Episodes ==============================
 
     override suspend fun getEpisodeList(anime: SAnime): List<SEpisode> {
-        val document = getDocument(absolute(anime.url))
+        val document = getDocument(absolute(anime.url.substringBefore('#')))
         val episodes = document.select("a[href*=/episode/]:has(.video-data)").mapNotNull { link ->
             val href = link.attr("href")
             val match = EPISODE_URL.find(href) ?: return@mapNotNull null
