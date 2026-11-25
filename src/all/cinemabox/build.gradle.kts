@@ -6,7 +6,7 @@ plugins {
 
 extension {
     name = "CinemaBox"
-    versionCode = 4
+    versionCode = 5
     contentWarning = ContentWarning.SAFE
 }
 
