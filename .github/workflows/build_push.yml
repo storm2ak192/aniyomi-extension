@@ -1,10 +1,12 @@
 name: CI
 
+# Builds and publishes ONLY the Anime3rb extension, signed with its own key (repository
+# secrets). Other extensions stay in the source tree untouched and are neither built nor
+# signed here.
 on:
   push:
     branches:
       - main
-      - master
   workflow_dispatch:
 
 permissions:
@@ -16,7 +18,7 @@ concurrency:
 
 jobs:
   build:
-    name: Build extensions
+    name: Build and publish Anime3rb
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
@@ -38,70 +40,68 @@ jobs:
         with:
           packages: ''
 
-      - name: Build extensions
+      - name: Prepare signing key
         env:
-          ALIAS: ar_aniyomi
-          KEY_STORE_PASSWORD: ar_aniyomi2026
-          KEY_PASSWORD: ar_aniyomi2026
+          KS_B64: ${{ secrets.ANIME3RB_KEYSTORE_B64 }}
+          KS_PASS: ${{ secrets.ANIME3RB_KEY_PASSWORD }}
+        run: |
+          echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/anime3rb.jks"
+          cp "$RUNNER_TEMP/anime3rb.jks" signingkey.jks
+          FP=$(keytool -list -v -keystore signingkey.jks -storepass "$KS_PASS" | grep 'SHA256:' | head -1 | sed 's/.*SHA256: *//' | tr -d ':' | tr 'A-F' 'a-f')
+          echo "SIGNING_FP=$FP" >> "$GITHUB_ENV"
+          echo "Signing certificate SHA-256: $FP"
+
+      - name: Build Anime3rb only
+        env:
+          ALIAS: anime3rb
+          KEY_STORE_PASSWORD: ${{ secrets.ANIME3RB_KEY_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.ANIME3RB_KEY_PASSWORD }}
         run: |
           chmod +x gradlew
-          ./gradlew -p src assembleRelease --stacktrace
+          ./gradlew :src:ar:anime3rb:assembleRelease --stacktrace
 
-      - name: Upload APKs
-        uses: actions/upload-artifact@v4
-        with:
-          name: individual-apks
-          path: |
-            **/build/outputs/apk/release/*.apk
-            **/build/source-info.json
-          retention-days: 1
+      - name: Verify APK signature
+        run: |
+          APKSIGNER=$(find "$ANDROID_HOME" -name apksigner -type f | sort | tail -1)
+          APK=$(ls src/ar/anime3rb/build/outputs/apk/release/*.apk | head -1)
+          echo "APK: $APK"
+          "$APKSIGNER" verify --print-certs "$APK" | tee /tmp/certs.txt
+          grep -qi "SHA-256 digest: $SIGNING_FP" /tmp/certs.txt
+          AAPT2=$(find "$ANDROID_HOME" -name aapt2 -type f | sort | tail -1)
+          "$AAPT2" dump badging "$APK" | grep -E "^package:|application-label:"
 
-  publish:
-    name: Publish repo branch
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout sources
-        uses: actions/checkout@v4
-
-      - name: Download APKs
-        uses: actions/download-artifact@v4
-        with:
-          name: individual-apks
-          path: apks
+      - name: Collect build outputs
+        run: |
+          mkdir -p out
+          cp src/ar/anime3rb/build/outputs/apk/release/*.apk out/
+          cp src/ar/anime3rb/build/source-info.json out/
 
       - name: Clone repo branch
         run: |
           git clone --depth 1 --branch repo \
-            "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" repo \
-            || {
-              mkdir repo
-              cd repo
-              git init -b repo
-              git config user.name "github-actions"
-              git config user.email "action@github.com"
-              git commit --allow-empty -q -m "init"
-              git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-            }
+            "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" repo
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Update index and APKs
+      - name: Replace only the Anime3rb entry
         run: |
-          cd repo
-          git config user.name "github-actions"
-          git config user.email "action@github.com"
-          python3 "$GITHUB_WORKSPACE/.github/scripts/make_index.py" "$GITHUB_WORKSPACE/apks" . "$GITHUB_WORKSPACE"
+          python3 .github/scripts/update_anime3rb_index.py "$GITHUB_WORKSPACE/out" "$GITHUB_WORKSPACE/repo" "$GITHUB_WORKSPACE" "$SIGNING_FP"
 
       - name: Push repo branch
         run: |
           cd repo
+          git config user.name "github-actions"
+          git config user.email "action@github.com"
           git add -A
           if [ -n "$(git status --porcelain)" ]; then
-            git commit -q -m "Update extensions repo"
+            git commit -q -m "Replace Anime3rb extension"
             git push origin repo
           else
             echo "No changes"
           fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Remove signing key from workspace
+        if: always()
+        run: rm -f signingkey.jks "$RUNNER_TEMP/anime3rb.jks"
