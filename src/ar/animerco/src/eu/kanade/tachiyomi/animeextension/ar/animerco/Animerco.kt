@@ -1,5 +1,11 @@
 package eu.kanade.tachiyomi.animeextension.ar.animerco
 
+import android.widget.Toast
+import androidx.preference.EditTextPreference
+import androidx.preference.ListPreference
+import eu.kanade.tachiyomi.animesource.model.HttpServer
+import extensions.utils.QualityUtils
+import java.util.Locale
 import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
 import eu.kanade.tachiyomi.animesource.model.AnimesPage
@@ -31,7 +37,47 @@ class Animerco : Source() {
 
     // ============================== Settings ==============================
 
-    override fun setupPreferenceScreen(screen: PreferenceScreen) = Unit
+    override fun setupPreferenceScreen(screen: PreferenceScreen) {
+        EditTextPreference(screen.context).apply {
+            key = PREF_DOMAIN
+            title = tr(screen, "نطاق الموقع", "Site domain")
+            summary = tr(screen, "الحالي: %s (يجب أن يبدأ بـ https://)", "Current: %s (must start with https://)")
+            setDefaultValue(DEFAULT_DOMAIN)
+            dialogTitle = title
+            setOnPreferenceChangeListener { _, newValue ->
+                val value = (newValue as? String)?.trim()?.trimEnd('/').orEmpty()
+                val ok = QualityUtils.normalizeDomain(value, "") == value && value.isNotEmpty()
+                if (!ok) {
+                    Toast.makeText(screen.context, tr(screen, "النطاق غير صالح", "Invalid domain"), Toast.LENGTH_SHORT).show()
+                }
+                ok
+            }
+        }.also(screen::addPreference)
+
+        ListPreference(screen.context).apply {
+            key = PREF_QUALITY
+            title = tr(screen, "الجودة المفضلة", "Preferred quality")
+            entries = arrayOf(tr(screen, "الأعلى المتاحة", "Highest available"), "1080p", "720p", "480p", "360p")
+            entryValues = arrayOf(QualityUtils.BEST, "1080", "720", "480", "360")
+            setDefaultValue(QualityUtils.BEST)
+            summary = "%s"
+        }.also(screen::addPreference)
+    }
+
+    private fun tr(screen: PreferenceScreen, ar: String, en: String): String {
+        val lang = runCatching { screen.context.resources.configuration.locales.get(0).language }
+            .getOrDefault(Locale.getDefault().language)
+        return if (lang == "ar") ar else en
+    }
+
+    private val preferredQuality: String
+        get() = preferences.getString(PREF_QUALITY, QualityUtils.BEST) ?: QualityUtils.BEST
+
+    override fun List<Video>.sortVideos(): List<Video> =
+        QualityUtils.sortByQuality(this, preferredQuality) { it.resolution }
+
+    /** The app starts this local server before handing a link to an external player; without one it reports a start failure. */
+    override fun createHttpServer(): HttpServer? = HttpServer()
 
     // ============================ Properties ==============================
 
@@ -40,7 +86,8 @@ class Animerco : Source() {
     override val lang = "ar"
 
     // The site rotates domains; every request follows the redirect to the current one.
-    override val baseUrl = "https://gat.animerco.org"
+    override val baseUrl: String
+        get() = QualityUtils.normalizeDomain(preferences.getString(PREF_DOMAIN, DEFAULT_DOMAIN), DEFAULT_DOMAIN)
 
     override val supportsLatest = true
 
@@ -49,6 +96,9 @@ class Animerco : Source() {
 
     @Volatile
     private var resolvedBase: String? = null
+
+    @Volatile
+    private var resolvedFor: String? = null
 
     // =============================== Network ==============================
 
@@ -60,8 +110,14 @@ class Animerco : Source() {
         .build()
 
     private suspend fun base(): String {
+        val configured = baseUrl
+        // Forget the cached redirect target when the user changes the domain setting.
+        if (resolvedFor != configured) {
+            resolvedBase = null
+            resolvedFor = configured
+        }
         resolvedBase?.let { return it }
-        val finalUrl = bodyOf("$baseUrl/")?.second ?: baseUrl
+        val finalUrl = bodyOf("$configured/")?.second ?: configured
         return finalUrl.trimEnd('/').also { resolvedBase = it }
     }
 
@@ -171,7 +227,7 @@ class Animerco : Source() {
     // ============================== Details ===============================
 
     override suspend fun getAnimeDetails(anime: SAnime): SAnime {
-        val doc = getDoc(anime.url) ?: throw Exception("Animerco: page not found")
+        val doc = getDoc(QualityUtils.rebase(anime.url, base())) ?: throw Exception("Animerco: page not found")
         val statusText = doc.selectFirst("div.anime-status .status, div.status a")?.text()?.trim()
 
         return anime.apply {
@@ -201,7 +257,7 @@ class Animerco : Source() {
     // ============================== Episodes ==============================
 
     override suspend fun getEpisodeList(anime: SAnime): List<SEpisode> {
-        val doc = getDoc(anime.url) ?: return emptyList()
+        val doc = getDoc(QualityUtils.rebase(anime.url, base())) ?: return emptyList()
         val episodes = mutableListOf<SEpisode>()
         val seen = mutableSetOf<String>()
 
@@ -269,7 +325,7 @@ class Animerco : Source() {
     )
 
     override suspend fun getHosterList(episode: SEpisode): List<Hoster> {
-        val doc = getDoc(episode.url) ?: return emptyList()
+        val doc = getDoc(QualityUtils.rebase(episode.url, base())) ?: return emptyList()
 
         return doc.select("ul.server-list li a.option")
             .mapNotNull { option ->
@@ -309,7 +365,7 @@ class Animerco : Source() {
                 Video(
                     videoUrl = link.url,
                     videoTitle = link.label,
-                    resolution = link.quality?.filter { it.isDigit() }?.toIntOrNull(),
+                    resolution = QualityUtils.heightOf(link.quality) ?: QualityUtils.heightOf(link.label),
                     headers = headersFor(link.referer ?: referer),
                 )
             }
@@ -545,6 +601,9 @@ class Animerco : Source() {
     }
 
     private companion object {
+        private const val DEFAULT_DOMAIN = "https://gat.animerco.org"
+        private const val PREF_DOMAIN = "domain"
+        private const val PREF_QUALITY = "preferred_quality"
         private const val ARABIC_DIGITS = "٠١٢٣٤٥٦٧٨٩"
         private const val ALNUM = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
         private const val BASE62 = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
