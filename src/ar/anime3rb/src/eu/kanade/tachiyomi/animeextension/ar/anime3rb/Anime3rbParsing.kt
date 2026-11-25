@@ -68,5 +68,62 @@ internal object Anime3rbParsing {
         }
     }
 
+    data class LatestItem(
+        val slug: String,
+        val number: String,
+        val label: String,
+        val title: String,
+        val image: String?,
+    )
+
+    private val cardRegex = Regex(
+        """<a\s[^>]*href="([^"]*/episode/([^/"?#]+)/(\d+(?:\.\d+)?))"[^>]*>(.*?)</a>""",
+        RegexOption.DOT_MATCHES_ALL,
+    )
+    private val imgRegex = Regex("""<img[^>]*\ssrc="([^"]*)"""")
+    private val titleRegex = Regex(
+        """<h3[^>]*title-name[^>]*>(.*?)</h3>""",
+        RegexOption.DOT_MATCHES_ALL,
+    )
+    private val numberRegex = Regex(
+        """<p[^>]*class="[^"]*number[^"]*"[^>]*>(.*?)</p>""",
+        RegexOption.DOT_MATCHES_ALL,
+    )
+
+    /**
+     * Episode cards of the site's "latest episodes" feed (the home page grid and the fragment the
+     * "load more" button fetches). One item per episode, in site order. An empty list means the
+     * feed has ended.
+     */
+    fun parseLatestFeed(html: String): List<LatestItem> {
+        val seen = LinkedHashSet<String>()
+        return cardRegex.findAll(html).mapNotNull { m ->
+            val body = m.groupValues[4]
+            val title = titleRegex.find(body)?.groupValues?.get(1)?.let(::cleanText).orEmpty()
+            if (title.isEmpty()) return@mapNotNull null
+            val number = m.groupValues[3]
+            if (!seen.add(m.groupValues[2] + "/" + number)) return@mapNotNull null
+            val label = numberRegex.find(body)?.groupValues?.get(1)?.let(::cleanText).orEmpty()
+            LatestItem(
+                slug = m.groupValues[2],
+                number = number,
+                label = label.ifEmpty { number },
+                title = title,
+                image = imgRegex.find(body)?.groupValues?.get(1)?.let(::cleanText)?.ifEmpty { null },
+            )
+        }.toList()
+    }
+
+    private fun cleanText(raw: String): String = raw
+        .replace(Regex("<[^>]*>"), "")
+        .replace("&quot;", "\"")
+        .replace("&#039;", "'")
+        .replace("&#x27;", "'")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&amp;", "&")
+        .replace(Regex("\\s+"), " ")
+        .trim()
+
     private fun JsonObject.text(key: String) = this[key]?.jsonPrimitive?.contentOrNull.orEmpty()
-}
+                                 }
