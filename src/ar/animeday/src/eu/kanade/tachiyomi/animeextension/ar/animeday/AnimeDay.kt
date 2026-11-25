@@ -2,6 +2,12 @@ package eu.kanade.tachiyomi.animeextension.ar.animeday
 
 import android.annotation.SuppressLint
 import android.provider.Settings
+import android.widget.Toast
+import androidx.preference.EditTextPreference
+import androidx.preference.ListPreference
+import eu.kanade.tachiyomi.animesource.model.HttpServer
+import extensions.utils.QualityUtils
+import java.util.Locale
 import androidx.preference.PreferenceScreen
 import com.anime.day.Utils.NativeLib
 import eu.kanade.tachiyomi.animesource.model.AnimesPage
@@ -31,7 +37,52 @@ class AnimeDay : Source() {
 
     // ============================== Settings ==============================
 
-    override fun setupPreferenceScreen(screen: PreferenceScreen) = Unit
+    override fun setupPreferenceScreen(screen: PreferenceScreen) {
+        EditTextPreference(screen.context).apply {
+            key = PREF_DOMAIN
+            title = tr(screen, "خادم API (اختياري)", "API host (optional)")
+            summary = tr(screen, "اتركه فارغاً للتحديد التلقائي. مثال: https://example.site", "Leave empty for automatic. Example: https://example.site")
+            setDefaultValue("")
+            dialogTitle = title
+            setOnPreferenceChangeListener { _, newValue ->
+                val value = (newValue as? String)?.trim()?.trimEnd('/').orEmpty()
+                val ok = value.isEmpty() || (QualityUtils.normalizeDomain(value, "") == value)
+                if (!ok) {
+                    Toast.makeText(screen.context, tr(screen, "النطاق غير صالح", "Invalid host"), Toast.LENGTH_SHORT).show()
+                }
+                ok
+            }
+        }.also(screen::addPreference)
+
+        ListPreference(screen.context).apply {
+            key = PREF_QUALITY
+            title = tr(screen, "الجودة المفضلة", "Preferred quality")
+            entries = arrayOf(tr(screen, "الأعلى المتاحة", "Highest available"), "FHD (1080p)", "HD (720p)", "SD (480p)")
+            entryValues = arrayOf(QualityUtils.BEST, "1080", "720", "480")
+            setDefaultValue(QualityUtils.BEST)
+            summary = "%s"
+        }.also(screen::addPreference)
+    }
+
+    private fun tr(screen: PreferenceScreen, ar: String, en: String): String {
+        val lang = runCatching { screen.context.resources.configuration.locales.get(0).language }
+            .getOrDefault(Locale.getDefault().language)
+        return if (lang == "ar") ar else en
+    }
+
+    private val preferredQuality: String
+        get() = preferences.getString(PREF_QUALITY, QualityUtils.BEST) ?: QualityUtils.BEST
+
+    private val apiOverride: String?
+        get() = preferences.getString(PREF_DOMAIN, "")?.trim()?.trimEnd('/')
+            ?.takeIf { it.startsWith("https://") || it.startsWith("http://") }
+            ?.let { "$it/v3.8/api" }
+
+    override fun List<Video>.sortVideos(): List<Video> =
+        QualityUtils.sortByQuality(this, preferredQuality) { it.resolution }
+
+    /** The app starts this local server before handing a link to an external player; without one it reports a start failure. */
+    override fun createHttpServer(): HttpServer? = HttpServer()
 
     // ============================ Properties ==============================
 
@@ -49,6 +100,7 @@ class AnimeDay : Source() {
     // =============================== Network ==============================
 
     private suspend fun api(): String {
+        apiOverride?.let { return it }
         resolvedApi?.let { return it }
         val fetched = tryFetchCloudday()
         return (fetched ?: DEFAULT_API).also { resolvedApi = it }
@@ -391,6 +443,8 @@ class AnimeDay : Source() {
     }
 
     private companion object {
+        const val PREF_DOMAIN = "domain"
+        const val PREF_QUALITY = "preferred_quality"
         const val DEFAULT_API = "https://20042026.site/v3.8/api"
         const val CONFIG_API = "https://backup-animeday.animegateshorts.workers.dev"
         const val REFERER = "https://www.anime-day.com/"
