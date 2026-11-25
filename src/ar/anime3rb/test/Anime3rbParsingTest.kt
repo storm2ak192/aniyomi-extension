@@ -72,4 +72,42 @@ class Anime3rbParsingTest {
             Anime3rbParsing.sortByQuality(items, "480") { it.resolution }.first().resolution,
         )
     }
+
+    // Cards copied from the live "load more" fragment (page 2 and a late page), whitespace collapsed.
+    private val latestFragment =
+        """<div class="my-2"> <a href="https://anime3rb.com/episode/ao-ashi-season-2/8" class="btn btn-md btn-plain video-card w-full"> <div class="poster"> <img src="https://images.anime3rb.com/544291/158726.jpg" loading="lazy" alt="x"> <div class="overlay">  </div> </div> <h3 class="title-name" dir="ltr">Ao Ashi Season 2</h3> <p class="number">الحلقة 8</p> </a> </div>""" + "\n" +
+            """<div class="my-2"> <a href="https://anime3rb.com/episode/kashita-maryoku-wa-revo-barai-de-kyousei-choushuu/8" class="btn btn-md btn-plain video-card w-full"> <div class="poster"> <img src="https://images.anime3rb.com/543761/159735.jpg" loading="lazy" alt="x"> <div class="overlay">  </div> </div> <h3 class="title-name" dir="ltr">Kashita Maryoku wa "Revo Barai" de Kyousei Choushuu</h3> <p class="number">الحلقة 8</p> </a> </div>""" + "\n" +
+            """<div class="my-2"> <a href="https://anime3rb.com/episode/zom-100-zombie-ni-naru-made-ni-shitai-100-no-koto/12" class="btn btn-md btn-plain video-card w-full"> <div class="poster"> <img src="https://images.anime3rb.com/301064/166309925c1d08.jpg" loading="lazy" alt="x"> <div class="overlay">  </div> </div> <h3 class="title-name" dir="ltr">Zom 100: Zombie ni Naru made ni Shitai 100 no Koto</h3> <p class="number">الحلقة 12 الأخيرة</p> </a> </div>"""
+
+    @Test
+    fun latestFeedGivesOneItemPerEpisodeWithNumber() {
+        val items = Anime3rbParsing.parseLatestFeed(latestFragment)
+        assertEquals(3, items.size)
+        assertEquals("ao-ashi-season-2", items[0].slug)
+        assertEquals("8", items[0].number)
+        assertEquals("الحلقة 8", items[0].label)
+        assertEquals("Ao Ashi Season 2", items[0].title)
+        assertEquals("https://images.anime3rb.com/544291/158726.jpg", items[0].image)
+        assertEquals("الحلقة 12 الأخيرة", items[2].label)
+        assertEquals("12", items[2].number)
+    }
+
+    @Test
+    fun latestFeedKeepsQuotesInTitles() {
+        val items = Anime3rbParsing.parseLatestFeed(latestFragment)
+        assertEquals("Kashita Maryoku wa \"Revo Barai\" de Kyousei Choushuu", items[1].title)
+    }
+
+    @Test
+    fun latestFeedDecodesEntitiesAndSkipsRepeats() {
+        val html = latestFragment + latestFragment.lines().first().replace("Ao Ashi Season 2", "Ao Ashi &amp; Co")
+        val items = Anime3rbParsing.parseLatestFeed(html)
+        assertEquals(3, items.size)
+    }
+
+    @Test
+    fun emptyFragmentMeansFeedEnded() {
+        assertTrue(Anime3rbParsing.parseLatestFeed("").isEmpty())
+        assertTrue(Anime3rbParsing.parseLatestFeed("  \n ").isEmpty())
+    }
 }
