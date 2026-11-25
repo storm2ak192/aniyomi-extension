@@ -1,5 +1,11 @@
 package eu.kanade.tachiyomi.animeextension.ar.anime3rb
 
+import android.graphics.Bitmap
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.preference.EditTextPreference
 import androidx.preference.ListPreference
 import androidx.preference.PreferenceScreen
@@ -13,6 +19,7 @@ import eu.kanade.tachiyomi.animesource.model.Video
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.awaitSuccess
 import extensions.utils.Source
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -27,6 +34,7 @@ import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import java.util.Locale
+import kotlin.coroutines.resume
 
 /**
  * Anime3rb source, written from scratch from the public pages of the site.
@@ -350,14 +358,18 @@ class Anime3rb : Source() {
 
         val playerOrigin = playerUrl.toHttpUrl().let { "${it.scheme}://${it.host}" }
         val playerHeaders = headersBuilder().set("Referer", "$baseUrl/").build()
-        val html = client.newCall(GET(playerUrl, playerHeaders)).awaitSuccess()
-            .use { it.body.string() }
+        val html = runCatching {
+            client.newCall(GET(playerUrl, playerHeaders)).awaitSuccess().use { it.body.string() }
+        }.getOrDefault("")
 
+        // Older player pages carried the list inline. The current page only loads it after a
+        // browser check, so it is read from a WebView that runs the page normally.
         val raw = SOURCES.find(html)?.groupValues?.get(1)
+            ?: fetchSourcesWithWebView(playerUrl)
             ?: throw Exception(
                 tr(
-                    "الموقع يطلب التحقق (Cloudflare) قبل عرض الجودات، لا يمكن جلبها من التطبيق",
-                    "The site requires a verification check before listing qualities; the app cannot fetch them",
+                    "تعذر جلب الجودات: الموقع يطلب التحقق في المتصفح. حاول مرة أخرى",
+                    "Could not load qualities: the site's browser check did not finish. Try again",
                 ),
             )
 
@@ -366,7 +378,7 @@ class Anime3rb : Source() {
             .add("User-Agent", headers["User-Agent"] ?: "")
             .build()
 
-        val videos = (json.parseToJsonElement(raw) as JsonArray).mapNotNull { element ->
+        val videos = parseSourceList(raw).mapNotNull { element ->
             val item = element.jsonObject
             if (item.bool("premium")) return@mapNotNull null
             val src = item.str("src").replace("\\/", "/")
@@ -386,6 +398,61 @@ class Anime3rb : Source() {
 
         return listOf(Hoster(hosterName = "Anime3rb", videoList = videos.sortedByPreference()))
     }
+
+    private fun parseSourceList(raw: String): List<kotlinx.serialization.json.JsonElement> {
+        val root = json.parseToJsonElement(raw)
+        val array = root as? JsonArray
+            ?: (root as? JsonObject)?.values?.firstOrNull { it is JsonArray } as? JsonArray
+        return array?.toList().orEmpty()
+    }
+
+    /**
+     * Loads the player page in a WebView with the site as referer, hooks XMLHttpRequest and
+     * returns the body of the page's own "sources" request. Gives up after 30 seconds.
+     */
+    private suspend fun fetchSourcesWithWebView(playerUrl: String): String? =
+        suspendCancellableCoroutine { cont ->
+            val handler = Handler(Looper.getMainLooper())
+            handler.post {
+                val webView = WebView(context)
+                var finished = false
+                fun finish(value: String?) {
+                    if (finished) return
+                    finished = true
+                    handler.removeCallbacksAndMessages(null)
+                    webView.stopLoading()
+                    webView.destroy()
+                    if (cont.isActive) cont.resume(value)
+                }
+                webView.settings.javaScriptEnabled = true
+                webView.settings.domStorageEnabled = true
+                headers["User-Agent"]?.let { webView.settings.userAgentString = it }
+                webView.webViewClient = object : WebViewClient() {
+                    override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
+                        view.evaluateJavascript(HOOK_JS, null)
+                    }
+                }
+                val deadline = SystemClock.uptimeMillis() + 30_000
+                val poll = object : Runnable {
+                    override fun run() {
+                        if (finished) return
+                        webView.evaluateJavascript("(window.__a3rb||'')") { result ->
+                            val text = runCatching {
+                                json.parseToJsonElement(result).jsonPrimitive.contentOrNull.orEmpty()
+                            }.getOrDefault("")
+                            when {
+                                text.isNotEmpty() -> finish(text)
+                                SystemClock.uptimeMillis() > deadline -> finish(null)
+                                else -> handler.postDelayed(this, 500)
+                            }
+                        }
+                    }
+                }
+                cont.invokeOnCancellation { handler.post { finish(null) } }
+                webView.loadUrl(playerUrl, mapOf("Referer" to "$baseUrl/"))
+                handler.postDelayed(poll, 1000)
+            }
+        }
 
     private fun JsonObject.str(key: String) = this[key]?.jsonPrimitive?.contentOrNull.orEmpty()
 
@@ -407,6 +474,15 @@ class Anime3rb : Source() {
     override fun List<Video>.sortVideos(): List<Video> = sortedByPreference()
 
     companion object {
+        private const val HOOK_JS =
+            "(function(){if(window.__a3rbHooked)return;window.__a3rbHooked=true;" +
+                "var o=XMLHttpRequest.prototype.open;" +
+                "XMLHttpRequest.prototype.open=function(m,u){this.__u=u;return o.apply(this,arguments)};" +
+                "var s=XMLHttpRequest.prototype.send;" +
+                "XMLHttpRequest.prototype.send=function(){var x=this;" +
+                "x.addEventListener('load',function(){" +
+                "if(String(x.__u).indexOf('/sources')>-1&&x.status>=200&&x.status<300){window.__a3rb=x.responseText}});" +
+                "return s.apply(this,arguments)}})();"
         private const val DEFAULT_DOMAIN = "https://anime3rb.com"
         private const val PREF_DOMAIN = "domain"
         private const val PREF_QUALITY = "preferred_quality"
