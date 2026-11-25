@@ -1,0 +1,147 @@
+name: Build other extensions
+
+# Builds and publishes the extensions listed in EXTS (not Anime3rb), signed with the repo's
+# own release key (repository secrets). Only the listed entries of the repo branch index change.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/ar/anime4up/**'
+      - 'src/ar/animerco/**'
+      - 'core/**'
+      - '.github/workflows/build_others.yml'
+      - '.github/scripts/update_index.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+env:
+  # module path:package name, space separated
+  EXTS: "ar/anime4up:eu.kanade.tachiyomi.animeextension.ar.anime4up ar/animerco:eu.kanade.tachiyomi.animeextension.ar.animerco"
+
+jobs:
+  build:
+    name: Build and publish listed extensions
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: 17
+          distribution: temurin
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          cache-read-only: true
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: ''
+
+      - name: Prepare signing key
+        env:
+          KS_B64: ${{ secrets.ANIME3RB_KEYSTORE_B64 }}
+          KS_PASS: ${{ secrets.ANIME3RB_KEY_PASSWORD }}
+        run: |
+          echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          cp "$RUNNER_TEMP/release.jks" signingkey.jks
+          FP=$(keytool -list -v -keystore signingkey.jks -storepass "$KS_PASS" | grep 'SHA256:' | head -1 | sed 's/.*SHA256: *//' | tr -d ':' | tr 'A-F' 'a-f')
+          echo "SIGNING_FP=$FP" >> "$GITHUB_ENV"
+          echo "Signing certificate SHA-256: $FP"
+
+      - name: Unit tests (quality and domain helpers, kotlinc + JUnit)
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/ut/out"
+          cd "$RUNNER_TEMP/ut"
+          M=https://repo.maven.apache.org/maven2
+          curl -sfL -o kc.zip https://github.com/JetBrains/kotlin/releases/download/v2.0.21/kotlin-compiler-2.0.21.zip
+          unzip -q kc.zip
+          for u in junit/junit/4.13.2/junit-4.13.2.jar \
+                   org/hamcrest/hamcrest-core/1.3/hamcrest-core-1.3.jar; do
+            curl -sfLO "$M/$u"
+          done
+          CP=$(ls "$PWD"/*.jar | tr '\n' ':')
+          kotlinc/bin/kotlinc -nowarn -cp "$CP" -d out \
+            "$GITHUB_WORKSPACE/core/src/main/kotlin/extensions/utils/QualityUtils.kt" \
+            "$GITHUB_WORKSPACE/core/test/QualityUtilsTest.kt"
+          java -cp "out:$CP$PWD/kotlinc/lib/kotlin-stdlib.jar" org.junit.runner.JUnitCore \
+            extensions.utils.QualityUtilsTest | tee result.txt
+          grep -E '^OK \([1-9][0-9]* tests?\)' result.txt
+
+      - name: Build listed extensions
+        env:
+          ALIAS: anime3rb
+          KEY_STORE_PASSWORD: ${{ secrets.ANIME3RB_KEY_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.ANIME3RB_KEY_PASSWORD }}
+        run: |
+          set -e
+          chmod +x gradlew
+          TASKS=""
+          for e in $EXTS; do
+            m=${e%%:*}
+            TASKS="$TASKS :src:${m%%/*}:${m##*/}:assembleRelease"
+          done
+          ./gradlew $TASKS -x spotlessKotlinCheck -x spotlessKotlin --stacktrace
+
+      - name: Verify APK signatures and collect outputs
+        run: |
+          set -e
+          APKSIGNER=$(find "$ANDROID_HOME" -name apksigner -type f | sort | tail -1)
+          AAPT2=$(find "$ANDROID_HOME" -name aapt2 -type f | sort | tail -1)
+          mkdir -p out
+          for e in $EXTS; do
+            m=${e%%:*}
+            for APK in src/$m/build/outputs/apk/release/*.apk; do
+              echo "APK: $APK"
+              "$APKSIGNER" verify --print-certs "$APK" | tee /tmp/certs.txt
+              grep -qi "SHA-256 digest: $SIGNING_FP" /tmp/certs.txt
+              "$AAPT2" dump badging "$APK" | grep -E "^package:|application-label:"
+              mkdir -p "out/$m"
+              cp "$APK" "out/$m/"
+            done
+            cp "src/$m/build/source-info.json" "out/$m/"
+          done
+
+      - name: Clone repo branch
+        run: |
+          git clone --depth 1 --branch repo \
+            "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" repo
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Replace only the listed entries
+        run: |
+          PKGS=""
+          for e in $EXTS; do PKGS="$PKGS ${e##*:}"; done
+          python3 .github/scripts/update_index.py "$GITHUB_WORKSPACE/out" "$GITHUB_WORKSPACE/repo" "$GITHUB_WORKSPACE" "$SIGNING_FP" $PKGS
+
+      - name: Push repo branch
+        run: |
+          cd repo
+          git config user.name "github-actions"
+          git config user.email "action@github.com"
+          git add -A
+          if [ -n "$(git status --porcelain)" ]; then
+            git commit -q -m "Update extensions: $EXTS"
+            git push origin repo
+          else
+            echo "No changes"
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Remove signing key from workspace
+        if: always()
+        run: rm -f signingkey.jks "$RUNNER_TEMP/release.jks"
