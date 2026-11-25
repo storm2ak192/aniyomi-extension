@@ -43,4 +43,17 @@ class QualityUtilsTest {
         assertEquals("https://new.site", QualityUtils.rebase("https://old.site", "https://new.site"))
         assertEquals("relative/p", QualityUtils.rebase("relative/p", "https://new.site"))
     }
+
+    @Test fun hosterNamesWithUnknownKeepTheirPlace() {
+        val names = listOf("Dood SD", "Vidrco", "Dood FHD", "Dood HD")
+        val unknownBest = Int.MAX_VALUE
+        assertEquals(
+            listOf("Vidrco", "Dood FHD", "Dood HD", "Dood SD"),
+            QualityUtils.sortByQuality(names, "best") { QualityUtils.heightOf(it) ?: unknownBest },
+        )
+        assertEquals(
+            listOf("Vidrco", "Dood HD", "Dood SD", "Dood FHD"),
+            QualityUtils.sortByQuality(names, "720") { QualityUtils.heightOf(it) ?: 720 },
+        )
+    }
 }
