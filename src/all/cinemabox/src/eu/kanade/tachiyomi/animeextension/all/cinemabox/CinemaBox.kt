@@ -2,7 +2,6 @@ package eu.kanade.tachiyomi.animeextension.all.cinemabox
 
 import android.widget.Toast
 import androidx.preference.EditTextPreference
-import androidx.preference.ListPreference
 import eu.kanade.tachiyomi.animesource.model.HttpServer
 import extensions.utils.QualityUtils
 import java.util.Locale
@@ -48,14 +47,6 @@ class CinemaBox : Source() {
             }
         }.also(screen::addPreference)
 
-        ListPreference(screen.context).apply {
-            key = PREF_QUALITY
-            title = tr(screen, "الدقة المفضلة (عند توفرها)", "Preferred resolution (when the player reports it)")
-            entries = arrayOf(tr(screen, "الأعلى المتاحة", "Highest available"), "1080p", "720p", "480p")
-            entryValues = arrayOf(QualityUtils.BEST, "1080", "720", "480")
-            setDefaultValue(QualityUtils.BEST)
-            summary = "%s"
-        }.also(screen::addPreference)
     }
 
     private fun tr(screen: PreferenceScreen, ar: String, en: String): String {
@@ -64,11 +55,7 @@ class CinemaBox : Source() {
         return if (lang == "ar") ar else en
     }
 
-    private val preferredQuality: String
-        get() = preferences.getString(PREF_QUALITY, QualityUtils.BEST) ?: QualityUtils.BEST
 
-    override fun List<Video>.sortVideos(): List<Video> =
-        QualityUtils.sortByQuality(this, preferredQuality) { it.resolution }
 
     /** The app starts this local server before handing a link to an external player; without one it reports a start failure. */
     override fun createHttpServer(): HttpServer? = HttpServer()
@@ -373,4 +360,3 @@ class CinemaBox : Source() {
 
 private const val DEFAULT_DOMAIN = "https://cinema.albox.co"
 private const val PREF_DOMAIN = "domain"
-private const val PREF_QUALITY = "preferred_quality"
