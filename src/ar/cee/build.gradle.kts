@@ -6,6 +6,14 @@ plugins {
 
 extension {
     name = "Cee"
-    versionCode = 1
+    versionCode = 2
     contentWarning = ContentWarning.SAFE
+}
+
+android {
+    buildTypes {
+        named("release") {
+            proguardFile("proguard-rules.pro")
+        }
+    }
 }
