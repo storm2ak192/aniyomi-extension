@@ -337,8 +337,15 @@ class Anime3rb : Source() {
 
     override suspend fun getHosterList(episode: SEpisode): List<Hoster> {
         val episodeDocument = getDocument(absolute(episode.url))
-        val playerUrl = episodeDocument.selectFirst("iframe[src*=/player/]")?.attr("src")
-            ?: PLAYER_URL.find(episodeDocument.html().replace("\\/", "/").replace("&amp;", "&"))?.value
+        // The iframe src is set by the page script, so the player address is read from the
+        // page's embedded data (HTML-escaped JSON) first.
+        val unescaped = episodeDocument.html()
+            .replace("&quot;", "\"")
+            .replace("&amp;", "&")
+            .replace("\\/", "/")
+        val playerUrl = VIDEO_URL.find(unescaped)?.groupValues?.get(1)
+            ?: episodeDocument.selectFirst("iframe[src*=/player/]")?.attr("src")?.takeIf { it.startsWith("http") }
+            ?: PLAYER_URL.find(unescaped)?.value
             ?: throw Exception(tr("لم يتم العثور على المشغل", "Player not found"))
 
         val playerOrigin = playerUrl.toHttpUrl().let { "${it.scheme}://${it.host}" }
@@ -347,7 +354,12 @@ class Anime3rb : Source() {
             .use { it.body.string() }
 
         val raw = SOURCES.find(html)?.groupValues?.get(1)
-            ?: throw Exception(tr("لا توجد جودات متاحة", "No qualities available"))
+            ?: throw Exception(
+                tr(
+                    "الموقع يطلب التحقق (Cloudflare) قبل عرض الجودات، لا يمكن جلبها من التطبيق",
+                    "The site requires a verification check before listing qualities; the app cannot fetch them",
+                ),
+            )
 
         val videoHeaders = Headers.Builder()
             .add("Referer", "$playerOrigin/")
@@ -401,6 +413,7 @@ class Anime3rb : Source() {
         private const val QUALITY_BEST = "best"
         private const val PAGE_SIZE = 20
 
+        private val VIDEO_URL = Regex("\"video_url\"\\s*:\\s*\"([^\"]+)\"")
         private val EPISODE_URL = Regex("""/episode/([^/?#]+)/(\d+(?:\.\d+)?)""")
         private val PLAYER_URL = Regex("""https?://[^\s"'<>]*/player/[^\s"'<>]+""")
         private val SOURCES = Regex("""var\s+video_sources\s*=\s*(\[\s*\{.*?\}\s*\]);""", RegexOption.DOT_MATCHES_ALL)
