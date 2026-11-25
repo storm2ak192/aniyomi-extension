@@ -57,8 +57,8 @@ class Animerco : Source() {
         ListPreference(screen.context).apply {
             key = PREF_QUALITY
             title = tr(screen, "الجودة المفضلة", "Preferred quality")
-            entries = arrayOf(tr(screen, "الأعلى المتاحة", "Highest available"), "1080p", "720p", "480p", "360p")
-            entryValues = arrayOf(QualityUtils.BEST, "1080", "720", "480", "360")
+            entries = arrayOf(tr(screen, "الأعلى المتاحة", "Highest available"), "FHD (1080p)", "HD (720p)", "SD (480p)")
+            entryValues = arrayOf(QualityUtils.BEST, "1080", "720", "480")
             setDefaultValue(QualityUtils.BEST)
             summary = "%s"
         }.also(screen::addPreference)
@@ -72,6 +72,12 @@ class Animerco : Source() {
 
     private val preferredQuality: String
         get() = preferences.getString(PREF_QUALITY, QualityUtils.BEST) ?: QualityUtils.BEST
+
+    /** Server names carry the site's quality tag (FHD, HD, SD). Servers without one (multi-quality players) keep their place. */
+    override fun List<Hoster>.sortHosters(): List<Hoster> {
+        val unknown = preferredQuality.toIntOrNull() ?: Int.MAX_VALUE
+        return QualityUtils.sortByQuality(this, preferredQuality) { QualityUtils.heightOf(it.hosterName) ?: unknown }
+    }
 
     override fun List<Video>.sortVideos(): List<Video> =
         QualityUtils.sortByQuality(this, preferredQuality) { it.resolution }
