@@ -52,11 +52,13 @@ jobs:
           echo "Signing certificate SHA-256: $FP"
 
       - name: Unit tests (parsing helpers)
-        continue-on-error: true
         run: |
+          chmod +x gradlew
+          set -o pipefail
           ./gradlew :src:ar:anime3rb:testDebugUnitTest -x spotlessKotlinCheck -x spotlessKotlin --stacktrace 2>&1 | tail -60
           echo "== test result files"
           find src/ar/anime3rb/build -name 'TEST-*.xml' -exec grep -h -o '<testsuite [^>]*' {} \;
+          test -n "$(find src/ar/anime3rb/build -name 'TEST-*.xml')"
 
       - name: Build Anime3rb only
         env:
