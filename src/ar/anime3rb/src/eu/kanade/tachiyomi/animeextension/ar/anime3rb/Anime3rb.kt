@@ -188,10 +188,18 @@ class Anime3rb : Source() {
         val fromFilter = filters.filterIsInstance<YearFromFilter>().firstOrNull()
         val toFilter = filters.filterIsInstance<YearToFilter>().firstOrNull()
 
+        // A text query uses the site's own /search page, which takes only the query and
+        // the page number. Filters apply to the catalogue browse (empty query).
+        if (query.isNotBlank()) {
+            val searchUrl = "$baseUrl/search".toHttpUrl().newBuilder()
+                .addQueryParameter("q", query.trim())
+                .addQueryParameter("page", page.toString())
+                .build()
+            return GET(searchUrl, headers)
+        }
+
         val typePath = typeFilter?.selectedValue().orEmpty()
         val builder = "$baseUrl/titles/list${if (typePath.isEmpty()) "" else "/$typePath"}".toHttpUrl().newBuilder()
-
-        if (query.isNotBlank()) builder.addQueryParameter("q", query.trim())
 
         genreFilter?.state?.filter { it.state }?.forEachIndexed { index, genre ->
             builder.addQueryParameter("genres[$index]", genre.slug)
