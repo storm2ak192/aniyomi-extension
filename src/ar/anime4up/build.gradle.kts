@@ -6,7 +6,7 @@ plugins {
 
 extension {
     name = "Anime4Up"
-    versionCode = 3
+    versionCode = 4
     contentWarning = ContentWarning.SAFE
 }
 
