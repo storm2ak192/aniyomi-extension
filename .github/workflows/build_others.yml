@@ -18,6 +18,7 @@ on:
       - 'src/ar/cimacloud/**'
       - 'src/all/cinemabox/**'
       - 'src/all/oscartv/**'
+      - 'src/ar/stardima/**'
       - 'core/**'
       - '.github/workflows/build_others.yml'
       - '.github/scripts/update_index.py'
@@ -32,7 +33,7 @@ concurrency:
 
 env:
   # module path:package name, space separated
-  EXTS: "ar/anime4up:eu.kanade.tachiyomi.animeextension.ar.anime4up ar/animerco:eu.kanade.tachiyomi.animeextension.ar.animerco ar/akwam:eu.kanade.tachiyomi.animeextension.ar.akwam ar/animeday:eu.kanade.tachiyomi.animeextension.ar.animeday ar/animeslayer:eu.kanade.tachiyomi.animeextension.ar.animeslayer ar/animewitcher:eu.kanade.tachiyomi.animeextension.ar.animewitcher ar/cee:eu.kanade.tachiyomi.animeextension.ar.cee ar/cimacloud:eu.kanade.tachiyomi.animeextension.ar.cimacloud all/cinemabox:eu.kanade.tachiyomi.animeextension.all.cinemabox all/oscartv:eu.kanade.tachiyomi.animeextension.all.oscartv"
+  EXTS: "ar/anime4up:eu.kanade.tachiyomi.animeextension.ar.anime4up ar/animerco:eu.kanade.tachiyomi.animeextension.ar.animerco ar/akwam:eu.kanade.tachiyomi.animeextension.ar.akwam ar/animeday:eu.kanade.tachiyomi.animeextension.ar.animeday ar/animeslayer:eu.kanade.tachiyomi.animeextension.ar.animeslayer ar/animewitcher:eu.kanade.tachiyomi.animeextension.ar.animewitcher ar/cee:eu.kanade.tachiyomi.animeextension.ar.cee ar/cimacloud:eu.kanade.tachiyomi.animeextension.ar.cimacloud all/cinemabox:eu.kanade.tachiyomi.animeextension.all.cinemabox all/oscartv:eu.kanade.tachiyomi.animeextension.all.oscartv ar/stardima:eu.kanade.tachiyomi.animeextension.ar.stardima"
 
 jobs:
   build:
