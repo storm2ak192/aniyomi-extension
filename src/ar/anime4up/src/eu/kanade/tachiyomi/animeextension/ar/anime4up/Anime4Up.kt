@@ -1,6 +1,12 @@
 package eu.kanade.tachiyomi.animeextension.ar.anime4up
 
 import android.util.Base64
+import android.widget.Toast
+import androidx.preference.EditTextPreference
+import androidx.preference.ListPreference
+import eu.kanade.tachiyomi.animesource.model.HttpServer
+import extensions.utils.QualityUtils
+import java.util.Locale
 import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
 import eu.kanade.tachiyomi.animesource.model.AnimesPage
@@ -30,7 +36,47 @@ class Anime4Up : Source() {
 
     // ============================== Settings ==============================
 
-    override fun setupPreferenceScreen(screen: PreferenceScreen) = Unit
+    override fun setupPreferenceScreen(screen: PreferenceScreen) {
+        EditTextPreference(screen.context).apply {
+            key = PREF_DOMAIN
+            title = tr(screen, "نطاق الموقع", "Site domain")
+            summary = tr(screen, "الحالي: %s (يجب أن يبدأ بـ https://)", "Current: %s (must start with https://)")
+            setDefaultValue(DEFAULT_DOMAIN)
+            dialogTitle = title
+            setOnPreferenceChangeListener { _, newValue ->
+                val value = (newValue as? String)?.trim()?.trimEnd('/').orEmpty()
+                val ok = QualityUtils.normalizeDomain(value, "") == value && value.isNotEmpty()
+                if (!ok) {
+                    Toast.makeText(screen.context, tr(screen, "النطاق غير صالح", "Invalid domain"), Toast.LENGTH_SHORT).show()
+                }
+                ok
+            }
+        }.also(screen::addPreference)
+
+        ListPreference(screen.context).apply {
+            key = PREF_QUALITY
+            title = tr(screen, "الجودة المفضلة", "Preferred quality")
+            entries = arrayOf(tr(screen, "الأعلى المتاحة", "Highest available"), "1080p", "720p", "480p", "360p")
+            entryValues = arrayOf(QualityUtils.BEST, "1080", "720", "480", "360")
+            setDefaultValue(QualityUtils.BEST)
+            summary = "%s"
+        }.also(screen::addPreference)
+    }
+
+    private fun tr(screen: PreferenceScreen, ar: String, en: String): String {
+        val lang = runCatching { screen.context.resources.configuration.locales.get(0).language }
+            .getOrDefault(Locale.getDefault().language)
+        return if (lang == "ar") ar else en
+    }
+
+    private val preferredQuality: String
+        get() = preferences.getString(PREF_QUALITY, QualityUtils.BEST) ?: QualityUtils.BEST
+
+    override fun List<Video>.sortVideos(): List<Video> =
+        QualityUtils.sortByQuality(this, preferredQuality) { it.resolution }
+
+    /** The app starts this local server before handing a link to an external player; without one it reports a start failure. */
+    override fun createHttpServer(): HttpServer? = HttpServer()
 
     // ============================ Properties ==============================
 
@@ -38,7 +84,8 @@ class Anime4Up : Source() {
 
     override val lang = "ar"
 
-    override val baseUrl = "https://w1.anime4up.rest"
+    override val baseUrl: String
+        get() = QualityUtils.normalizeDomain(preferences.getString(PREF_DOMAIN, DEFAULT_DOMAIN), DEFAULT_DOMAIN)
 
     override val supportsLatest = true
 
@@ -166,7 +213,7 @@ class Anime4Up : Source() {
     // ============================== Details ===============================
 
     override suspend fun getAnimeDetails(anime: SAnime): SAnime {
-        val doc = getDoc(anime.url) ?: throw Exception("Anime4Up: page not found")
+        val doc = getDoc(QualityUtils.rebase(anime.url, baseUrl)) ?: throw Exception("Anime4Up: page not found")
 
         val info = doc.select(".anime-info").map { it.text().trim() }.filter { it.isNotEmpty() }
 
@@ -192,7 +239,7 @@ class Anime4Up : Source() {
     // ============================== Episodes ==============================
 
     override suspend fun getEpisodeList(anime: SAnime): List<SEpisode> {
-        var doc = getDoc(anime.url) ?: return emptyList()
+        var doc = getDoc(QualityUtils.rebase(anime.url, baseUrl)) ?: return emptyList()
 
         // Episode pages are valid entries too: walk up to the parent anime.
         if (anime.url.contains("/episode/")) {
@@ -251,7 +298,7 @@ class Anime4Up : Source() {
     )
 
     override suspend fun getHosterList(episode: SEpisode): List<Hoster> {
-        val doc = getDoc(episode.url) ?: return emptyList()
+        val doc = getDoc(QualityUtils.rebase(episode.url, baseUrl)) ?: return emptyList()
 
         return doc.select("ul#episode-servers li[data-watch], ul#watch-servers li[data-watch]")
             .mapNotNull { li ->
@@ -281,7 +328,7 @@ class Anime4Up : Source() {
                 Video(
                     videoUrl = link.url,
                     videoTitle = link.label,
-                    resolution = link.quality?.filter { it.isDigit() }?.toIntOrNull(),
+                    resolution = QualityUtils.heightOf(link.quality) ?: QualityUtils.heightOf(link.label),
                     headers = headersFor(link.referer ?: referer),
                 )
             }
@@ -512,6 +559,9 @@ class Anime4Up : Source() {
         private const val ARABIC_DIGITS = "٠١٢٣٤٥٦٧٨٩"
         private const val ALNUM = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
         private const val BASE62 = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        private const val DEFAULT_DOMAIN = "https://w1.anime4up.rest"
+        private const val PREF_DOMAIN = "domain"
+        private const val PREF_QUALITY = "preferred_quality"
         private val DIRECT_STREAM = Regex("""\.(mp4|m3u8)\b|\bmaster\.txt\b""", RegexOption.IGNORE_CASE)
         private val SKIP_HOSTS = listOf("test-videos.co.uk", "acek-cdn.com")
         private val PREFERRED_MIRRORS = listOf("mp4upload.", "voe.sx", "lulustream.", "luluvdo.", "morencius.", "rubyvidhub.", "playmogo.")
@@ -522,4 +572,4 @@ class Anime4Up : Source() {
         private val DOOD_PASS = Regex("""/pass_md5/[^'"]+""")
         private val PACKED_JS = Regex("""eval\(function\(p,a,c,k,e,[a-z]\)\{.*?\}\('(.*?)',(\d+),(\d+),'(.*?)'\.split\('\|'\)""", RegexOption.DOT_MATCHES_ALL)
     }
-}
+                                      }
