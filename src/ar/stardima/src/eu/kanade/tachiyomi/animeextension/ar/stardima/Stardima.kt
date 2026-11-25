@@ -281,6 +281,8 @@ class Stardima : Source() {
             if (obj["type"]?.jsonPrimitive?.contentOrNull != "iframe") return@mapNotNull null
             val id = obj["id"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
             val serverName = obj["name"]?.jsonPrimitive?.contentOrNull ?: "Server"
+            // Streamhg builds its player with page scripts, so no direct link can be read from it.
+            if (serverName.contains("streamhg", ignoreCase = true)) return@mapNotNull null
             Hoster(hosterUrl = "$origin/embed/$hash/server/$id/url|$watchUrl", hosterName = serverName)
         }
     }
