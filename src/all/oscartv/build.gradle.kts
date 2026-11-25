@@ -7,6 +7,14 @@ plugins {
 extension {
     name = "Oscar TV"
     qname = "OscarTv"
-    versionCode = 4
+    versionCode = 5
     contentWarning = ContentWarning.SAFE
+}
+
+android {
+    buildTypes {
+        named("release") {
+            proguardFile("proguard-rules.pro")
+        }
+    }
 }
