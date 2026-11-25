@@ -148,7 +148,7 @@ class Akwam : Source() {
     // ============================== Details ===============================
 
     override suspend fun getAnimeDetails(anime: SAnime): SAnime {
-        val doc = getDoc(anime.url) ?: throw Exception("Akwam: page not found")
+        val doc = getDoc(QualityUtils.rebase(anime.url, baseUrl)) ?: throw Exception("Akwam: page not found")
 
         return anime.apply {
             title = doc.selectFirst("h1.entry-title")?.text()?.trim() ?: title
@@ -167,14 +167,14 @@ class Akwam : Source() {
     // ============================== Episodes ==============================
 
     override suspend fun getEpisodeList(anime: SAnime): List<SEpisode> {
-        val doc = getDoc(anime.url) ?: return emptyList()
+        val doc = getDoc(QualityUtils.rebase(anime.url, baseUrl)) ?: return emptyList()
 
         // Movie: single pseudo-episode
         val directEpisodes = doc.select("div#series-episodes div[class*='col-']")
         if (directEpisodes.isEmpty() && doc.selectFirst("a.link-show") != null) {
             return listOf(
                 SEpisode.create().apply {
-                    url = anime.url
+                    url = QualityUtils.rebase(anime.url, baseUrl)
                     name = "فيلم"
                     episode_number = 1f
                 },
@@ -208,7 +208,7 @@ class Akwam : Source() {
 
     // =============================== Videos ===============================
 
-    override suspend fun getHosterList(episode: SEpisode): List<Hoster> = listOf(Hoster(hosterUrl = episode.url, hosterName = "Akwam"))
+    override suspend fun getHosterList(episode: SEpisode): List<Hoster> = listOf(Hoster(hosterUrl = QualityUtils.rebase(episode.url, baseUrl), hosterName = "Akwam"))
 
     override suspend fun getVideoList(hoster: Hoster): List<Video> {
         val episodeUrl = hoster.hosterUrl
