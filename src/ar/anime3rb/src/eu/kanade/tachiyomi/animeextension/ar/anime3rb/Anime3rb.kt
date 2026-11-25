@@ -4,6 +4,7 @@ import android.graphics.Bitmap
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.preference.EditTextPreference
@@ -20,13 +21,11 @@ import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.awaitSuccess
 import extensions.utils.Source
 import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.Headers
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -345,15 +344,10 @@ class Anime3rb : Source() {
 
     override suspend fun getHosterList(episode: SEpisode): List<Hoster> {
         val episodeDocument = getDocument(absolute(episode.url))
-        // The iframe src is set by the page script, so the player address is read from the
-        // page's embedded data (HTML-escaped JSON) first.
-        val unescaped = episodeDocument.html()
-            .replace("&quot;", "\"")
-            .replace("&amp;", "&")
-            .replace("\\/", "/")
-        val playerUrl = VIDEO_URL.find(unescaped)?.groupValues?.get(1)
+        // The iframe src is set by the page script, so the player address comes from the
+        // page's embedded data (HTML-escaped JSON).
+        val playerUrl = Anime3rbParsing.playerUrl(episodeDocument.html())
             ?: episodeDocument.selectFirst("iframe[src*=/player/]")?.attr("src")?.takeIf { it.startsWith("http") }
-            ?: PLAYER_URL.find(unescaped)?.value
             ?: throw Exception(tr("لم يتم العثور على المشغل", "Player not found"))
 
         val playerOrigin = playerUrl.toHttpUrl().let { "${it.scheme}://${it.host}" }
@@ -364,7 +358,7 @@ class Anime3rb : Source() {
 
         // Older player pages carried the list inline. The current page only loads it after a
         // browser check, so it is read from a WebView that runs the page normally.
-        val raw = SOURCES.find(html)?.groupValues?.get(1)
+        val raw = Anime3rbParsing.INLINE_SOURCES.find(html)?.groupValues?.get(1)
             ?: fetchSourcesWithWebView(playerUrl)
             ?: throw Exception(
                 tr(
@@ -378,16 +372,11 @@ class Anime3rb : Source() {
             .add("User-Agent", headers["User-Agent"] ?: "")
             .build()
 
-        val videos = parseSourceList(raw).mapNotNull { element ->
-            val item = element.jsonObject
-            if (item.bool("premium")) return@mapNotNull null
-            val src = item.str("src").replace("\\/", "/")
-            if (src.isEmpty()) return@mapNotNull null
-            val label = item.str("label").ifEmpty { item.str("res") + "p" }
+        val videos = Anime3rbParsing.parseSources(raw).map { item ->
             Video(
-                videoUrl = src,
-                videoTitle = "Anime3rb - $label",
-                resolution = item.str("res").toIntOrNull(),
+                videoUrl = item.url,
+                videoTitle = "Anime3rb - ${item.label}",
+                resolution = item.resolution,
                 headers = videoHeaders,
             )
         }
@@ -397,13 +386,6 @@ class Anime3rb : Source() {
         }
 
         return listOf(Hoster(hosterName = "Anime3rb", videoList = videos.sortedByPreference()))
-    }
-
-    private fun parseSourceList(raw: String): List<kotlinx.serialization.json.JsonElement> {
-        val root = json.parseToJsonElement(raw)
-        val array = root as? JsonArray
-            ?: (root as? JsonObject)?.values?.firstOrNull { it is JsonArray } as? JsonArray
-        return array?.toList().orEmpty()
     }
 
     /**
@@ -424,12 +406,21 @@ class Anime3rb : Source() {
                     webView.destroy()
                     if (cont.isActive) cont.resume(value)
                 }
+                val playerHost = playerUrl.toHttpUrl().host
                 webView.settings.javaScriptEnabled = true
+                webView.settings.allowFileAccess = false
+                webView.settings.allowContentAccess = false
                 webView.settings.domStorageEnabled = true
                 headers["User-Agent"]?.let { webView.settings.userAgentString = it }
                 webView.webViewClient = object : WebViewClient() {
+                    // Only the player page may run the hook, and it never leaves the player host.
+                    override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean =
+                        request.isForMainFrame && request.url.host != playerHost
+
                     override fun onPageStarted(view: WebView, url: String?, favicon: Bitmap?) {
-                        view.evaluateJavascript(HOOK_JS, null)
+                        if (url?.toHttpUrlOrNull()?.host == playerHost) {
+                            view.evaluateJavascript(HOOK_JS, null)
+                        }
                     }
                 }
                 val deadline = SystemClock.uptimeMillis() + 30_000
@@ -454,22 +445,10 @@ class Anime3rb : Source() {
             }
         }
 
-    private fun JsonObject.str(key: String) = this[key]?.jsonPrimitive?.contentOrNull.orEmpty()
 
-    private fun JsonObject.bool(key: String) = this[key]?.jsonPrimitive?.contentOrNull == "true"
 
-    private fun List<Video>.sortedByPreference(): List<Video> {
-        val wanted = preferredQuality.toIntOrNull()
-        return if (wanted == null) {
-            sortedByDescending { it.resolution ?: 0 }
-        } else {
-            // Exact match first, then the closest lower qualities, then higher ones.
-            sortedWith(
-                compareBy<Video> { (it.resolution ?: 0) > wanted }
-                    .thenByDescending { it.resolution ?: 0 },
-            )
-        }
-    }
+    private fun List<Video>.sortedByPreference(): List<Video> =
+        Anime3rbParsing.sortByQuality(this, preferredQuality) { it.resolution }
 
     override fun List<Video>.sortVideos(): List<Video> = sortedByPreference()
 
@@ -489,10 +468,7 @@ class Anime3rb : Source() {
         private const val QUALITY_BEST = "best"
         private const val PAGE_SIZE = 20
 
-        private val VIDEO_URL = Regex("\"video_url\"\\s*:\\s*\"([^\"]+)\"")
         private val EPISODE_URL = Regex("""/episode/([^/?#]+)/(\d+(?:\.\d+)?)""")
-        private val PLAYER_URL = Regex("""https?://[^\s"'<>]*/player/[^\s"'<>]+""")
-        private val SOURCES = Regex("""var\s+video_sources\s*=\s*(\[\s*\{.*?\}\s*\]);""", RegexOption.DOT_MATCHES_ALL)
 
         private val GENRES = listOf(
         Genre("action", "أكشن", "Action"),
