@@ -133,8 +133,14 @@ class Anime3rb : Source() {
         return SAnime.create().apply {
             url = toPath(href)
             this.title = title
-            thumbnail_url = card.selectFirst("img")?.let { it.absUrl("src").ifEmpty { it.attr("src") } }
+            thumbnail_url = imageUrl(card)
         }
+    }
+
+    private fun imageUrl(card: Element): String? {
+        val img = card.selectFirst("img") ?: return null
+        val abs = img.absUrl("src")
+        return if (abs.isNotEmpty()) abs else img.attr("src")
     }
 
     private fun parseCatalogue(document: Document): AnimesPage {
@@ -173,7 +179,7 @@ class Anime3rb : Source() {
             SAnime.create().apply {
                 url = path
                 this.title = title
-                thumbnail_url = card.selectFirst("img")?.let { it.absUrl("src").ifEmpty { it.attr("src") } }
+                thumbnail_url = imageUrl(card)
             }
         }
         return AnimesPage(animes, false)
