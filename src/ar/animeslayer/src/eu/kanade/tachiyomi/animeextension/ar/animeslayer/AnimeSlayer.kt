@@ -1,5 +1,11 @@
 package eu.kanade.tachiyomi.animeextension.ar.animeslayer
 
+import android.widget.Toast
+import androidx.preference.EditTextPreference
+import androidx.preference.ListPreference
+import eu.kanade.tachiyomi.animesource.model.HttpServer
+import extensions.utils.QualityUtils
+import java.util.Locale
 import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
 import eu.kanade.tachiyomi.animesource.model.AnimesPage
@@ -25,7 +31,47 @@ class AnimeSlayer : Source() {
 
     // ============================== Settings ==============================
 
-    override fun setupPreferenceScreen(screen: PreferenceScreen) = Unit
+    override fun setupPreferenceScreen(screen: PreferenceScreen) {
+        EditTextPreference(screen.context).apply {
+            key = PREF_DOMAIN
+            title = tr(screen, "نطاق الموقع", "Site domain")
+            summary = tr(screen, "الحالي: %s (يجب أن يبدأ بـ https://)", "Current: %s (must start with https://)")
+            setDefaultValue(DEFAULT_DOMAIN)
+            dialogTitle = title
+            setOnPreferenceChangeListener { _, newValue ->
+                val value = (newValue as? String)?.trim()?.trimEnd('/').orEmpty()
+                val ok = QualityUtils.normalizeDomain(value, "") == value && value.isNotEmpty()
+                if (!ok) {
+                    Toast.makeText(screen.context, tr(screen, "النطاق غير صالح", "Invalid domain"), Toast.LENGTH_SHORT).show()
+                }
+                ok
+            }
+        }.also(screen::addPreference)
+
+        ListPreference(screen.context).apply {
+            key = PREF_QUALITY
+            title = tr(screen, "الدقة المفضلة (عند توفرها)", "Preferred resolution (when the player reports it)")
+            entries = arrayOf(tr(screen, "الأعلى المتاحة", "Highest available"), "1080p", "720p", "480p")
+            entryValues = arrayOf(QualityUtils.BEST, "1080", "720", "480")
+            setDefaultValue(QualityUtils.BEST)
+            summary = "%s"
+        }.also(screen::addPreference)
+    }
+
+    private fun tr(screen: PreferenceScreen, ar: String, en: String): String {
+        val lang = runCatching { screen.context.resources.configuration.locales.get(0).language }
+            .getOrDefault(Locale.getDefault().language)
+        return if (lang == "ar") ar else en
+    }
+
+    private val preferredQuality: String
+        get() = preferences.getString(PREF_QUALITY, QualityUtils.BEST) ?: QualityUtils.BEST
+
+    override fun List<Video>.sortVideos(): List<Video> =
+        QualityUtils.sortByQuality(this, preferredQuality) { it.resolution }
+
+    /** The app starts this local server before handing a link to an external player; without one it reports a start failure. */
+    override fun createHttpServer(): HttpServer? = HttpServer()
 
     // ============================ Properties ==============================
 
@@ -33,11 +79,12 @@ class AnimeSlayer : Source() {
 
     override val lang = "ar"
 
-    override val baseUrl = "https://anslayer.com"
+    override val baseUrl: String
+        get() = QualityUtils.normalizeDomain(preferences.getString(PREF_DOMAIN, DEFAULT_DOMAIN), DEFAULT_DOMAIN)
 
     override val supportsLatest = true
 
-    private val api = "$baseUrl/anime/public"
+    private val api get() = "$baseUrl/anime/public"
 
     private val ua = "okhttp/5.3.2"
 
@@ -269,3 +316,7 @@ class AnimeSlayer : Source() {
         }
     }
 }
+
+private const val DEFAULT_DOMAIN = "https://anslayer.com"
+private const val PREF_DOMAIN = "domain"
+private const val PREF_QUALITY = "preferred_quality"
