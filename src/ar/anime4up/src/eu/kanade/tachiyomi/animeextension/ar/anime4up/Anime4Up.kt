@@ -559,4 +559,4 @@ class Anime4Up : Source() {
         private val DOOD_PASS = Regex("""/pass_md5/[^'"]+""")
         private val PACKED_JS = Regex("""eval\(function\(p,a,c,k,e,[a-z]\)\{.*?\}\('(.*?)',(\d+),(\d+),'(.*?)'\.split\('\|'\)""", RegexOption.DOT_MATCHES_ALL)
     }
-                                      }
+}
