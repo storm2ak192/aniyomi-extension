@@ -6,7 +6,7 @@ plugins {
 
 extension {
     name = "Anime3rb"
-    versionCode = 5
+    versionCode = 6
     contentWarning = ContentWarning.SAFE
 }
 
