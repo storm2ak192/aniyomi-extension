@@ -368,7 +368,7 @@ class Anime3rb : Source() {
             throw Exception(tr("الحلقة متاحة للمشتركين فقط", "This episode is premium only"))
         }
 
-        return listOf(Hoster(hosterName = "Anime3rb", videoList = videos.sortedByPreference()))
+        return listOf(Hoster(hosterName = "Anime3rb", videoList = videos.sortedByDescending { it.resolution ?: 0 }))
     }
 
     /**
