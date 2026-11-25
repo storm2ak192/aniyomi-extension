@@ -6,7 +6,7 @@ plugins {
 
 extension {
     name = "AnimeSlayer"
-    versionCode = 3
+    versionCode = 4
     contentWarning = ContentWarning.SAFE
 }
 
