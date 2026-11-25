@@ -6,6 +6,14 @@ plugins {
 
 extension {
     name = "CinemaBox"
-    versionCode = 3
+    versionCode = 4
     contentWarning = ContentWarning.SAFE
+}
+
+android {
+    buildTypes {
+        named("release") {
+            proguardFile("proguard-rules.pro")
+        }
+    }
 }
