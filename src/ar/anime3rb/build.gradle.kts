@@ -6,7 +6,7 @@ plugins {
 
 extension {
     name = "Anime3rb"
-    versionCode = 7
+    versionCode = 8
     contentWarning = ContentWarning.SAFE
 }
 
@@ -20,6 +20,9 @@ android {
     sourceSets {
         named("test") {
             java.srcDir("test")
+            (this as org.gradle.api.plugins.ExtensionAware).extensions.findByName("kotlin")?.let {
+                (it as org.gradle.api.file.SourceDirectorySet).srcDir("test")
+            }
         }
     }
     buildTypes {
