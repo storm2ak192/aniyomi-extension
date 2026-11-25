@@ -2,7 +2,6 @@ package eu.kanade.tachiyomi.animeextension.ar.animerco
 
 import android.widget.Toast
 import androidx.preference.EditTextPreference
-import androidx.preference.ListPreference
 import eu.kanade.tachiyomi.animesource.model.HttpServer
 import extensions.utils.QualityUtils
 import java.util.Locale
@@ -54,14 +53,6 @@ class Animerco : Source() {
             }
         }.also(screen::addPreference)
 
-        ListPreference(screen.context).apply {
-            key = PREF_QUALITY
-            title = tr(screen, "الجودة المفضلة", "Preferred quality")
-            entries = arrayOf(tr(screen, "الأعلى المتاحة", "Highest available"), "FHD (1080p)", "HD (720p)", "SD (480p)")
-            entryValues = arrayOf(QualityUtils.BEST, "1080", "720", "480")
-            setDefaultValue(QualityUtils.BEST)
-            summary = "%s"
-        }.also(screen::addPreference)
     }
 
     private fun tr(screen: PreferenceScreen, ar: String, en: String): String {
@@ -70,17 +61,8 @@ class Animerco : Source() {
         return if (lang == "ar") ar else en
     }
 
-    private val preferredQuality: String
-        get() = preferences.getString(PREF_QUALITY, QualityUtils.BEST) ?: QualityUtils.BEST
 
-    /** Server names carry the site's quality tag (FHD, HD, SD). Servers without one (multi-quality players) keep their place. */
-    override fun List<Hoster>.sortHosters(): List<Hoster> {
-        val unknown = preferredQuality.toIntOrNull() ?: Int.MAX_VALUE
-        return QualityUtils.sortByQuality(this, preferredQuality) { QualityUtils.heightOf(it.hosterName) ?: unknown }
-    }
 
-    override fun List<Video>.sortVideos(): List<Video> =
-        QualityUtils.sortByQuality(this, preferredQuality) { it.resolution }
 
     /** The app starts this local server before handing a link to an external player; without one it reports a start failure. */
     override fun createHttpServer(): HttpServer? = HttpServer()
@@ -609,7 +591,6 @@ class Animerco : Source() {
     private companion object {
         private const val DEFAULT_DOMAIN = "https://gat.animerco.org"
         private const val PREF_DOMAIN = "domain"
-        private const val PREF_QUALITY = "preferred_quality"
         private const val ARABIC_DIGITS = "٠١٢٣٤٥٦٧٨٩"
         private const val ALNUM = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789"
         private const val BASE62 = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
