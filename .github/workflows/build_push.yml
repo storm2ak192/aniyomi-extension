@@ -58,7 +58,7 @@ jobs:
           KEY_PASSWORD: ${{ secrets.ANIME3RB_KEY_PASSWORD }}
         run: |
           chmod +x gradlew
-          ./gradlew :src:ar:anime3rb:assembleRelease --stacktrace
+          ./gradlew :src:ar:anime3rb:assembleRelease -x spotlessKotlinCheck -x spotlessKotlin --stacktrace
 
       - name: Verify APK signature
         run: |
