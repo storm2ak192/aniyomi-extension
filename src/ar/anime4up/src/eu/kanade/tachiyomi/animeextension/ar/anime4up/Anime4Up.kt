@@ -22,7 +22,10 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import eu.kanade.tachiyomi.network.await
+import okhttp3.FormBody
 import okhttp3.Headers
+import okhttp3.Request
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.jsoup.Jsoup
@@ -287,6 +290,7 @@ class Anime4Up : Source() {
 
     override suspend fun getHosterList(episode: SEpisode): List<Hoster> {
         val doc = getDoc(QualityUtils.rebase(episode.url, baseUrl)) ?: return emptyList()
+        val episodeId = EPISODE_ID.find(doc.html())?.groupValues?.get(1)
 
         return doc.select("ul#episode-servers li[data-watch], ul#watch-servers li[data-watch]")
             .mapNotNull { li ->
@@ -301,7 +305,10 @@ class Anime4Up : Source() {
                 Hoster(
                     hosterUrl = watchUrl,
                     hosterName = listOfNotNull(serverName, quality).joinToString(" · "),
-                    memo = buildJsonObject { put("ep", episode.url) },
+                    memo = buildJsonObject {
+                        put("ep", episode.url)
+                        episodeId?.let { put("epid", it) }
+                    },
                 )
             }
             .distinctBy { it.hosterUrl }
@@ -309,8 +316,10 @@ class Anime4Up : Source() {
 
     override suspend fun getVideoList(hoster: Hoster): List<Video> {
         val referer = hoster.memo["ep"]?.jsonPrimitive?.contentOrNull ?: baseUrl
+        val episodeId = hoster.memo["epid"]?.jsonPrimitive?.contentOrNull
+        val target = resolveToken(hoster.hosterUrl, referer, episodeId) ?: hoster.hosterUrl
 
-        return resolveLink(hoster.hosterUrl, referer, hoster.hosterName)
+        return resolveLink(target, referer, hoster.hosterName)
             .distinctBy { it.url }
             .map { link ->
                 Video(
@@ -320,6 +329,43 @@ class Anime4Up : Source() {
                     headers = headersFor(link.referer ?: referer),
                 )
             }
+    }
+
+    /**
+     * The episode page now hands every server an opaque 64-character token instead of a player URL.
+     * The player address only comes back from POSTing that token to the episode page itself.
+     */
+    private suspend fun resolveToken(token: String, episodeUrl: String, episodeId: String?): String? {
+        if (episodeId == null || !TOKEN_RE.matches(token)) return null
+        val endpoint = episodeUrl.toHttpUrlOrNull()?.newBuilder()
+            ?.addQueryParameter("a4sl_media", "1")
+            ?.build() ?: return null
+        val headers = headersFor(episodeUrl).newBuilder()
+            .set("Accept", "application/json")
+            .set("X-Requested-With", "XMLHttpRequest")
+            .build()
+        val request = Request.Builder()
+            .url(endpoint)
+            .headers(headers)
+            .post(
+                FormBody.Builder()
+                    .add("ep", episodeId)
+                    .add("kind", "watch")
+                    .add("id", token)
+                    .build(),
+            )
+            .build()
+        return try {
+            val response = client.newCall(request).await()
+            if (!response.isSuccessful) return null
+            json.parseToJsonElement(response.body.string()).jsonObject["play"]
+                ?.jsonPrimitive?.contentOrNull
+                ?.takeIf { it.startsWith("http") }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            null
+        }
     }
 
     private suspend fun resolveLink(url: String, referer: String, serverName: String, depth: Int = 0): List<StreamLink> {
@@ -555,8 +601,10 @@ class Anime4Up : Source() {
         private val VO_REDIRECT = Regex("""window\.location\.href\s*=\s*'([^']+)'""")
         private val VO_PATTERNS = listOf("@$", "^^", "~@", "%?", "*~", "!!", "#&")
         private val VNX_STREAM = Regex("""let streamUrl = "([^"]+)"""")
+        private val TOKEN_RE = Regex("^[a-f0-9]{64}$")
+        private val EPISODE_ID = Regex("""episodeId\s*=\s*(\d+)""")
         private val VK_STREAM = Regex(""""(mp4_\d{3,4}|hls)":"(https:\\/\\/[^"]+)"""")
         private val DOOD_PASS = Regex("""/pass_md5/[^'"]+""")
         private val PACKED_JS = Regex("""eval\(function\(p,a,c,k,e,[a-z]\)\{.*?\}\('(.*?)',(\d+),(\d+),'(.*?)'\.split\('\|'\)""", RegexOption.DOT_MATCHES_ALL)
     }
-}
+                                      }
