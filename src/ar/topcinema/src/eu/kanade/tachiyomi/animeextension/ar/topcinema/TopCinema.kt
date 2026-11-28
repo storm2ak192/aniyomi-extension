@@ -199,6 +199,9 @@ class TopCinema : Source() {
 
     override suspend fun getHosterList(episode: SEpisode): List<Hoster> {
         val watchUrl = abs(episode.url).trimEnd('/') + "/watch/"
+        // Headers must be ASCII: episode slugs contain Arabic, and a raw (non-encoded)
+        // Referer makes OkHttp throw, which silently dropped every ajax server.
+        val encodedWatchUrl = watchUrl.toHttpUrl().toString()
         val doc = getDoc(watchUrl, "$baseUrl/") ?: return emptyList()
         val hosters = mutableListOf<Hoster>()
 
@@ -215,7 +218,7 @@ class TopCinema : Source() {
             if (id.isBlank() || index.isBlank()) continue
             val body = FormBody.Builder().add("id", id).add("i", index).build()
             val response = try {
-                val ajaxHeaders = headers(watchUrl).newBuilder()
+                val ajaxHeaders = headers(encodedWatchUrl).newBuilder()
                     .add("X-Requested-With", "XMLHttpRequest")
                     .add("Accept", "*/*")
                     .build()
