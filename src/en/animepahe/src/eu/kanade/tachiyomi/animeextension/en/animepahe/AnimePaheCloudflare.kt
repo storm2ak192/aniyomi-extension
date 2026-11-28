@@ -15,41 +15,71 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * Automatic Cloudflare bypass for animepahe.pw.
+ * Automatic Cloudflare bypass for animepahe.
  *
- * The site fronts everything with Cloudflare, so plain requests get a 403 challenge.
- * When that happens the interceptor opens an invisible WebView with the same fixed
- * user agent the extension uses, waits for the JS challenge to set cf_clearance,
- * then retries the request with that cookie and the user agent that solved it, so
- * the clearance is accepted instead of looping.
+ * The site fronts everything with Cloudflare, so plain requests can get a 403 challenge.
+ * When that happens the interceptor opens an invisible WebView with the device's real
+ * WebView user agent, waits for the challenge to set cf_clearance, then retries the
+ * request with that cookie and the user agent that solved it, so the clearance is
+ * accepted instead of looping. If the challenge cannot be solved automatically, the
+ * request is retried against the site's official mirrors (animepahe.com/.org), whose
+ * Cloudflare screening is often less strict; a mirror that answers becomes the active
+ * one for later requests.
  */
 class CloudflareInterceptor(
     private val context: () -> Application,
     private val userAgent: () -> String,
+    private val mirrors: List<String>,
 ) : Interceptor {
 
     private val bypassLock = Any()
 
-    override fun intercept(chain: Interceptor.Chain): Response {
-        val request = chain.request()
-        val response = chain.proceed(request)
+    @Volatile
+    private var activeMirror: String? = null
 
+    override fun intercept(chain: Interceptor.Chain): Response {
+        var request = chain.request()
+        if (request.url.host in mirrors) {
+            activeMirror?.takeIf { it != request.url.host }?.let { mirror ->
+                request = request.newBuilder()
+                    .url(request.url.newBuilder().host(mirror).build())
+                    .build()
+            }
+        }
+
+        val response = chain.proceed(request)
         if (response.code !in ERROR_CODES || response.header("cf-ray") == null) {
             return response
         }
         response.close()
 
-        // One WebView bypass at a time; concurrent requests reuse its result via cookies.
+        // One WebView bypass at a time; concurrent requests serialize behind it.
         val bypass = synchronized(bypassLock) {
             CloudflareBypass(context()).getCookies(request.url.toString(), userAgent())
-        } ?: return chain.proceed(request)
+        }
+        if (bypass != null) {
+            return chain.proceed(
+                request.newBuilder()
+                    .header("Cookie", bypass.cookies)
+                    .header("User-Agent", bypass.userAgent)
+                    .build(),
+            )
+        }
 
-        return chain.proceed(
-            request.newBuilder()
-                .header("Cookie", bypass.cookies)
-                .header("User-Agent", bypass.userAgent)
-                .build(),
-        )
+        // Auto-solve failed (interactive challenge): try the official mirrors.
+        for (mirror in mirrors - request.url.host) {
+            val mirrored = request.newBuilder()
+                .url(request.url.newBuilder().host(mirror).build())
+                .build()
+            val mirrorResponse = chain.proceed(mirrored)
+            if (mirrorResponse.code !in ERROR_CODES) {
+                activeMirror = mirror
+                return mirrorResponse
+            }
+            mirrorResponse.close()
+        }
+
+        return chain.proceed(request)
     }
 
     companion object {
