@@ -117,8 +117,11 @@ object EgyDeadExtractors {
     }
 
     private fun findInertiaPage(html: String): String? {
-        val marker = "{\"component\":\"files/mirror/video\""
-        val start = html.indexOf(marker)
+        // The page JSON starts {"component":"files/mirror/video" but the site escapes
+        // slashes (files\/mirror\/video), so anchor on the part before the first slash.
+        val compIdx = html.indexOf("\"component\":\"files")
+        if (compIdx < 0) return null
+        val start = html.lastIndexOf('{', compIdx)
         if (start < 0) return null
         var depth = 0
         var inString = false
@@ -135,7 +138,7 @@ object EgyDeadExtractors {
                 !inString && c == '{' -> depth++
                 !inString && c == '}' -> {
                     depth--
-                    if (depth == 0) return html.substring(start, i + 1)
+                    if (depth == 0) return html.substring(start, i + 1).replace("\\/", "/")
                 }
             }
         }
@@ -198,12 +201,14 @@ object EgyDeadExtractors {
         val text = unpacked.replace("\\/", "/")
         val stream = streamRegex.find(text)?.let { match ->
             if (match.groupValues.size > 1) match.groupValues[1] else match.value
-        } ?: return emptyList()
+        } ?: PROTO_STREAM.find(text)?.value ?: return emptyList()
         val fixed = if (stream.startsWith("//")) "https:$stream" else stream
         return listOf(Video(fixed, label.ifBlank { host }, headers = pageHeaders(userAgent, url)))
     }
 
     private val MIXDROP_STREAM = Regex("""MDCore\.wurl\s*=\s*"([^"]+)""")
+
+    private val PROTO_STREAM = Regex("""(//[^"'\s\\]+?\.(?:m3u8|mp4)[^"'\s\\]*)""")
 
     private suspend fun uqload(client: OkHttpClient, url: String, label: String, userAgent: String): List<Video> {
         val fixed = url.replace("https://uqload.co/", "https://www.uqload.co/")
