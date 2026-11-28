@@ -55,21 +55,23 @@ object EgyDeadExtractors {
             .add("Referer", referer)
             .build()
 
-        val html = try {
-            client.get(iframeUrl.toHttpUrl(), pageHeaders).body.string()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Throwable) {
-            return emptyList()
+        // Fail loudly per stage: the player surfaces the message and the log shows where
+        // the chain broke.
+        val response = client.get(iframeUrl.toHttpUrl(), pageHeaders)
+        val html = response.body.string()
+        if (!response.isSuccessful) {
+            throw Exception("EgyDead: video page answered HTTP ${response.code}")
         }
 
-        val pageJson = findInertiaPage(html) ?: return emptyList()
+        val pageJson = findInertiaPage(html)
+            ?: throw Exception("EgyDead: video page layout changed")
         val page = try {
             json.parseToJsonElement(pageJson).jsonObject
         } catch (_: Throwable) {
-            return emptyList()
+            throw Exception("EgyDead: video page data unreadable")
         }
-        val version = page["version"]?.jsonPrimitive?.contentOrNull ?: return emptyList()
+        val version = page["version"]?.jsonPrimitive?.contentOrNull
+            ?: throw Exception("EgyDead: video page version missing")
         val component = page["component"]?.jsonPrimitive?.contentOrNull ?: "files/mirror/video"
 
         val inertiaHeaders = Headers.Builder()
@@ -83,12 +85,10 @@ object EgyDeadExtractors {
             .add("Accept", "text/html, application/xhtml+xml")
             .build()
 
-        val streamsBody = try {
-            client.get(iframeUrl.toHttpUrl(), inertiaHeaders).body.string()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Throwable) {
-            return emptyList()
+        val streamsResponse = client.get(iframeUrl.toHttpUrl(), inertiaHeaders)
+        val streamsBody = streamsResponse.body.string()
+        if (!streamsResponse.isSuccessful) {
+            throw Exception("EgyDead: streams request answered HTTP ${streamsResponse.code}")
         }
 
         val data = try {
@@ -97,7 +97,7 @@ object EgyDeadExtractors {
                 .getValue("streams").jsonObject
                 .getValue("data").jsonArray
         } catch (_: Throwable) {
-            return emptyList()
+            throw Exception("EgyDead: streams data unreadable")
         }
 
         val videos = mutableListOf<Video>()
@@ -113,7 +113,11 @@ object EgyDeadExtractors {
                 videos += fromMirror(client, link, "$driver $label", iframeUrl, userAgent)
             }
         }
-        return videos.distinctBy { it.videoUrl }
+        val distinct = videos.distinctBy { it.videoUrl }
+        if (distinct.isEmpty()) {
+            throw Exception("EgyDead: no mirror returned a playable stream")
+        }
+        return distinct
     }
 
     private fun findInertiaPage(html: String): String? {
