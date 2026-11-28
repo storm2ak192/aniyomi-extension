@@ -159,7 +159,7 @@ object EgyDeadExtractors {
             when {
                 DOOD_REGEX.containsMatchIn(url) -> dood(client, url, label, userAgent)
                 "mixdrop" in url -> packed(client, url, label, userAgent, MIXDROP_STREAM)
-                "uqload" in url -> uqload(client, url, label, userAgent)
+                // uqload and the rest are packed pages; the generic unpacker handles them.
                 else -> packed(client, url, label, userAgent, STREAM)
             }
         } catch (e: CancellationException) {
