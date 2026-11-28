@@ -107,9 +107,14 @@ object TopCinemaExtractors {
             }.distinctBy { it.videoUrl }
         }
 
-        val stream = STREAM.find(unpacked)?.value ?: return emptyList()
+        val stream = STREAM.find(unpacked)?.value
+            ?: PROTO_STREAM.find(unpacked)?.value?.let { "https:$it" }
+            ?: return emptyList()
         return listOf(Video(stream, label.ifBlank { host }, headers = pageHeaders(userAgent, "$host/")))
     }
+
+    // Protocol-relative stream URLs (e.g. mixdrop's wurl).
+    private val PROTO_STREAM = Regex("""(//[^"'\s\\]+?\.(?:m3u8|mp4)[^"'\s\\]*)""")
 
     private val STREAMTAPE_PARTS = Regex(
         """"(//[^"]*?get_video\?[^"]*?)"\s*\+\s*'([^']*)'""",
