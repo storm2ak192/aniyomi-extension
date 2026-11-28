@@ -40,6 +40,48 @@ jobs:
   build:
     name: Build and publish listed extensions
     runs-on: ubuntu-latest
+
+# Builds and publishes the extensions listed in EXTS (not Anime3rb), signed with the repo's
+# own release key (repository secrets). Only the listed entries of the repo branch index change.
+# Pushes build and test only; publishing to the repo branch happens only on a manual run.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/ar/anime4up/**'
+      - 'src/ar/animerco/**'
+      - 'src/ar/akwam/**'
+      - 'src/ar/animeday/**'
+      - 'src/ar/animeslayer/**'
+      - 'src/ar/animewitcher/**'
+      - 'src/ar/cee/**'
+      - 'src/ar/cimacloud/**'
+      - 'src/all/cinemabox/**'
+      - 'src/all/oscartv/**'
+      - 'src/ar/stardima/**'
+      - 'src/en/animepahe/**'
+      - 'src/ar/egydead/**'
+      - 'core/**'
+      - '.github/workflows/build_others.yml'
+      - '.github/scripts/update_index.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+env:
+  # module path:package name, space separated
+  EXTS: "ar/anime4up:eu.kanade.tachiyomi.animeextension.ar.anime4up ar/animerco:eu.kanade.tachiyomi.animeextension.ar.animerco ar/akwam:eu.kanade.tachiyomi.animeextension.ar.akwam ar/animeday:eu.kanade.tachiyomi.animeextension.ar.animeday ar/animeslayer:eu.kanade.tachiyomi.animeextension.ar.animeslayer ar/animewitcher:eu.kanade.tachiyomi.animeextension.ar.animewitcher ar/cee:eu.kanade.tachiyomi.animeextension.ar.cee ar/cimacloud:eu.kanade.tachiyomi.animeextension.ar.cimacloud all/cinemabox:eu.kanade.tachiyomi.animeextension.all.cinemabox all/oscartv:eu.kanade.tachiyomi.animeextension.all.oscartv ar/stardima:eu.kanade.tachiyomi.animeextension.ar.stardima en/animepahe:eu.kanade.tachiyomi.animeextension.en.animepahe ar/egydead:eu.kanade.tachiyomi.animeextension.ar.egydead"
+
+jobs:
+  build:
+    name: Build and publish listed extensions
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
