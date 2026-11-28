@@ -1,0 +1,29 @@
+name: Commit extension icons
+
+# One-shot helper: decodes the base64 payloads under .github/icons/ into the
+# extension res/ trees and commits them. Run manually, then it can be deleted.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  icons:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Decode icons into place
+        run: |
+          mkdir -p src/en/animepahe/res/mipmap-xxxhdpi src/ar/egydead/res/mipmap-xxxhdpi src/ar/topcinema/res/mipmap-xxxhdpi
+          base64 -d .github/icons/animepahe.b64 > src/en/animepahe/res/mipmap-xxxhdpi/ic_launcher.png
+          base64 -d .github/icons/egydead.b64 > src/ar/egydead/res/mipmap-xxxhdpi/ic_launcher.png
+          base64 -d .github/icons/topcinema.b64 > src/ar/topcinema/res/mipmap-xxxhdpi/ic_launcher.png
+          rm -f .github/icons/animepahe.b64 .github/icons/egydead.b64 .github/icons/topcinema.b64
+      - name: Commit and push
+        run: |
+          git config user.name "storm2ak192"
+          git config user.email "storm2ak192@users.noreply.github.com"
+          git add -A
+          git commit -m "Add site icons for AnimePahe, EgyDead, TopCinema (mipmap-xxxhdpi)"
+          git push
