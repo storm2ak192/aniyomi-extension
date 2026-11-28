@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.animeextension.en.animepahe
 
+import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
 import eu.kanade.tachiyomi.animesource.model.AnimesPage
 import eu.kanade.tachiyomi.animesource.model.Hoster
@@ -44,6 +45,10 @@ class AnimePahe : Source() {
     override val baseUrl = "https://animepahe.pw"
 
     override val supportsLatest = true
+
+    override fun setupPreferenceScreen(screen: PreferenceScreen) {
+        // No user-configurable settings.
+    }
 
     // =============================== Network ==============================
 
@@ -193,7 +198,6 @@ class AnimePahe : Source() {
                         if (edition.isNotBlank()) append(" $edition")
                     }
                     episode_number = number
-                    thumbnail_url = item["snapshot"]?.jsonPrimitive?.contentOrNull
                 }
             }
             lastPage = json["last_page"]?.jsonPrimitive?.intOrNull ?: 1
