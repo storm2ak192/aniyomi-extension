@@ -34,8 +34,7 @@ import java.net.URLEncoder
  */
 class AnimePahe : Source() {
 
-    private val userAgent =
-        "Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36"
+    private val userAgent = UA
 
     override val name = "AnimePahe"
 
@@ -45,6 +44,11 @@ class AnimePahe : Source() {
 
     override val supportsLatest = true
 
+    // Retries Cloudflare-blocked requests through an invisible WebView challenge solve.
+    override val client = network.client.newBuilder()
+        .addInterceptor(CloudflareInterceptor({ context }, { userAgent }))
+        .build()
+
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
         // No user-configurable settings.
     }
@@ -52,6 +56,7 @@ class AnimePahe : Source() {
     // =============================== Network ==============================
 
     private fun headers(referer: String? = null): Headers = Headers.Builder()
+        .add("User-Agent", userAgent)
         .add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
         .add("Accept-Language", "en-US,en;q=0.9")
         .apply { if (referer != null) add("Referer", referer) }
@@ -227,6 +232,9 @@ class AnimePahe : Source() {
 
     override fun getFilterList(): AnimeFilterList = AnimeFilterList()
 }
+
+// Matches the WebView user agent in AnimePaheCloudflare, so a solved cf_clearance is accepted.
+private const val UA = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Mobile Safari/537.36"
 
 private val PATH_RE = Regex("""/anime/[0-9a-fA-F-]{8,}""")
 private const val MAX_EPISODE_PAGES = 40
