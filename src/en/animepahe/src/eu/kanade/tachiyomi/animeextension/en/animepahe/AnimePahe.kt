@@ -9,7 +9,6 @@ import eu.kanade.tachiyomi.animesource.model.SEpisode
 import eu.kanade.tachiyomi.animesource.model.Video
 import extensions.utils.Source
 import extensions.utils.get
-import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
@@ -53,28 +52,19 @@ class AnimePahe : Source() {
     // =============================== Network ==============================
 
     private fun headers(referer: String? = null): Headers = Headers.Builder()
-        .add("User-Agent", userAgent)
         .add("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
         .add("Accept-Language", "en-US,en;q=0.9")
         .apply { if (referer != null) add("Referer", referer) }
         .build()
 
-    private suspend fun getDoc(url: String, referer: String? = null): Document? = try {
+    private suspend fun getDoc(url: String, referer: String? = null): Document {
         val response = client.get(url.toHttpUrl(), headers(referer))
-        Jsoup.parse(response.body.string(), response.request.url.toString())
-    } catch (e: CancellationException) {
-        throw e
-    } catch (_: Throwable) {
-        null
+        return Jsoup.parse(response.body.string(), response.request.url.toString())
     }
 
-    private suspend fun getJson(url: String, referer: String = "$baseUrl/"): JsonObject? = try {
+    private suspend fun getJson(url: String, referer: String = "$baseUrl/"): JsonObject {
         val response = client.get(url.toHttpUrl(), headers(referer))
-        Json.parseToJsonElement(response.body.string()).jsonObject
-    } catch (e: CancellationException) {
-        throw e
-    } catch (_: Throwable) {
-        null
+        return Json.parseToJsonElement(response.body.string()).jsonObject
     }
 
     private fun abs(path: String): String = if (path.startsWith("http")) path else baseUrl + "/" + path.trimStart('/')
@@ -84,7 +74,7 @@ class AnimePahe : Source() {
     // =============================== Listings =============================
 
     override suspend fun getPopularAnime(page: Int): AnimesPage {
-        val doc = getDoc("$baseUrl/anime?page=$page") ?: return AnimesPage(emptyList(), false)
+        val doc = getDoc("$baseUrl/anime?page=$page")
         val items = doc.select("a[href*=anime/]").mapNotNull { a ->
             val path = pathOf(a.attr("href").trim())
             if (!PATH_RE.matches(path)) return@mapNotNull null
@@ -100,7 +90,7 @@ class AnimePahe : Source() {
     }
 
     override suspend fun getLatestUpdates(page: Int): AnimesPage {
-        val json = getJson("$baseUrl/api?m=airing&page=$page") ?: return AnimesPage(emptyList(), false)
+        val json = getJson("$baseUrl/api?m=airing&page=$page")
         val data = json["data"]?.jsonArray ?: return AnimesPage(emptyList(), false)
         val items = data.mapNotNull { element ->
             val item = element.jsonObject
@@ -122,7 +112,7 @@ class AnimePahe : Source() {
         val search = query.trim()
         if (search.isEmpty()) return getPopularAnime(page)
         val encoded = URLEncoder.encode(search, "UTF-8")
-        val json = getJson("$baseUrl/api?m=search&q=$encoded&page=$page") ?: return AnimesPage(emptyList(), false)
+        val json = getJson("$baseUrl/api?m=search&q=$encoded&page=$page")
         val data = json["data"]?.jsonArray ?: return AnimesPage(emptyList(), false)
         val items = data.mapNotNull { element ->
             val item = element.jsonObject
@@ -148,7 +138,7 @@ class AnimePahe : Source() {
     // =============================== Details ==============================
 
     override suspend fun getAnimeDetails(anime: SAnime): SAnime {
-        val doc = getDoc(abs(anime.url)) ?: return anime
+        val doc = getDoc(abs(anime.url))
         val info = doc.select(".anime-info").text()
         return anime.apply {
             title = doc.selectFirst("meta[property=og:title]")?.attr("content")?.trim()
@@ -183,7 +173,7 @@ class AnimePahe : Source() {
         var page = 1
         var lastPage = 1
         do {
-            val json = getJson("$baseUrl/api?m=release&id=$session&sort=episode_asc&page=$page", detailsUrl) ?: break
+            val json = getJson("$baseUrl/api?m=release&id=$session&sort=episode_asc&page=$page", detailsUrl)
             val data = json["data"]?.jsonArray ?: break
             data.forEach { element ->
                 val item = element.jsonObject
@@ -211,7 +201,7 @@ class AnimePahe : Source() {
 
     override suspend fun getHosterList(episode: SEpisode): List<Hoster> {
         val playUrl = abs(episode.url)
-        val doc = getDoc(playUrl, "$baseUrl/") ?: return emptyList()
+        val doc = getDoc(playUrl, "$baseUrl/")
         return doc.select("button[data-src], button[data-url]").mapNotNull { button ->
             val source = button.attr("data-src").ifBlank { button.attr("data-url") }
             if (source.isBlank()) return@mapNotNull null
