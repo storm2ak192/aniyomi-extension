@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.animeextension.ar.egydead
 
+import android.webkit.WebSettings
 import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.animesource.model.AnimeFilter
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
@@ -33,8 +34,8 @@ import org.jsoup.nodes.Document
  */
 class EgyDead : Source() {
 
-    private val userAgent =
-        "Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36"
+    // The device's real WebView UA, so any solved cf_clearance is accepted.
+    private val userAgent: String by lazy { WebSettings.getDefaultUserAgent(context) }
 
     override val name = "EgyDead"
 
@@ -43,6 +44,11 @@ class EgyDead : Source() {
     override val baseUrl = "https://egweg1.sbs"
 
     override val supportsLatest = true
+
+    // Auto-solves Cloudflare challenges (aggregator domain is CF-fronted on some networks).
+    override val client = network.client.newBuilder()
+        .addInterceptor(CloudflareInterceptor({ context }, { userAgent }, emptyList()))
+        .build()
 
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
         // No user-configurable settings.
