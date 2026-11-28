@@ -39,7 +39,13 @@ object TopCinemaExtractors {
             when {
                 DOOD_REGEX.containsMatchIn(url) -> dood(client, url, hoster.hosterName, userAgent)
                 "streamtape" in url -> streamtape(client, url, hoster.hosterName, userAgent)
-                else -> packed(client, url, hoster.hosterName, userAgent)
+                else -> {
+                    // updown embed URLs end in -<width>x<height>.html; label with the real
+                    // resolution. Other hosts publish no per-server quality.
+                    val quality = RESOLUTION_RE.find(url)?.groupValues?.get(2)?.let { "${it}p" }
+                    val label = quality?.let { "${hoster.hosterName} $it" } ?: hoster.hosterName
+                    packed(client, url, label, userAgent)
+                }
             }
         } catch (e: CancellationException) {
             throw e
@@ -112,6 +118,9 @@ object TopCinemaExtractors {
             ?: return emptyList()
         return listOf(Video(stream, label.ifBlank { host }, headers = pageHeaders(userAgent, "$host/")))
     }
+
+    // -<width>x<height> suffix in embed URLs (updown).
+    private val RESOLUTION_RE = Regex("""-(\d+)x(\d+)""")
 
     // Protocol-relative stream URLs (e.g. mixdrop's wurl).
     private val PROTO_STREAM = Regex("""(//[^"'\s\\]+?\.(?:m3u8|mp4)[^"'\s\\]*)""")
