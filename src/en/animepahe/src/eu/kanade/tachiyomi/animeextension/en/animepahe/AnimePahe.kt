@@ -1,5 +1,6 @@
 package eu.kanade.tachiyomi.animeextension.en.animepahe
 
+import android.webkit.WebSettings
 import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.animesource.model.AnimeFilterList
 import eu.kanade.tachiyomi.animesource.model.AnimesPage
@@ -34,7 +35,9 @@ import java.net.URLEncoder
  */
 class AnimePahe : Source() {
 
-    private val userAgent = UA
+    // The device's real WebView UA: a cf_clearance solved in any WebView (ours or the
+    // app's prompt) is tied to this exact UA, so requests must send it verbatim.
+    private val userAgent: String by lazy { WebSettings.getDefaultUserAgent(context) }
 
     override val name = "AnimePahe"
 
@@ -44,9 +47,10 @@ class AnimePahe : Source() {
 
     override val supportsLatest = true
 
-    // Retries Cloudflare-blocked requests through an invisible WebView challenge solve.
+    // Retries Cloudflare-blocked requests through an invisible WebView challenge solve,
+    // then falls back to the site's official mirrors.
     override val client = network.client.newBuilder()
-        .addInterceptor(CloudflareInterceptor({ context }, { userAgent }))
+        .addInterceptor(CloudflareInterceptor({ context }, { userAgent }, MIRRORS))
         .build()
 
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
@@ -234,7 +238,7 @@ class AnimePahe : Source() {
 }
 
 // Matches the WebView user agent in AnimePaheCloudflare, so a solved cf_clearance is accepted.
-private const val UA = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Mobile Safari/537.36"
+private val MIRRORS = listOf("animepahe.pw", "animepahe.com", "animepahe.org")
 
 private val PATH_RE = Regex("""/anime/[0-9a-fA-F-]{8,}""")
 private const val MAX_EPISODE_PAGES = 40
