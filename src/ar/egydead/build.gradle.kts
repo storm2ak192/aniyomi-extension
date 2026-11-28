@@ -6,7 +6,7 @@ plugins {
 
 extension {
     name = "EgyDead"
-    versionCode = 2
+    versionCode = 3
     contentWarning = ContentWarning.SAFE
 }
 
