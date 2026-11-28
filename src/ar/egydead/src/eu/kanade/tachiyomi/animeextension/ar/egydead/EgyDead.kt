@@ -45,10 +45,8 @@ class EgyDead : Source() {
 
     override val supportsLatest = true
 
-    // Auto-solves Cloudflare challenges (aggregator domain is CF-fronted on some networks).
-    override val client = network.client.newBuilder()
-        .addInterceptor(CloudflareInterceptor({ context }, { userAgent }, emptyList()))
-        .build()
+    // The app's network.client already carries its Cloudflare interceptor; adding a second
+    // one doubles the bypass stall, so this source relies on the stock client.
 
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
         // No user-configurable settings.
@@ -216,15 +214,15 @@ class EgyDead : Source() {
     override suspend fun getHosterList(episode: SEpisode): List<Hoster> {
         val watchUrl = abs(episode.url)
         val body = FormBody.Builder().add("View", "1").build()
-        val doc = try {
-            val response = client.post(watchUrl.toHttpUrl(), headers("$baseUrl/"), body)
-            Jsoup.parse(response.body.string(), watchUrl)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Throwable) {
-            return emptyList()
+        // Let network errors (including the app's Cloudflare bypass failure) propagate so the
+        // app shows the real cause instead of a silent "no available video".
+        val response = client.post(watchUrl.toHttpUrl(), headers("$baseUrl/"), body)
+        val bodyText = response.body.string()
+        if (!response.isSuccessful) {
+            throw Exception("EgyDead: watch page answered HTTP ${response.code}")
         }
-        return doc.select("ul.serversList li").mapNotNull { li ->
+        val doc = Jsoup.parse(bodyText, watchUrl)
+        val hosters = doc.select("ul.serversList li").mapNotNull { li ->
             val link = li.attr("data-link").ifBlank {
                 li.selectFirst("[data-link]")?.attr("data-link")
             }.orEmpty()
@@ -232,6 +230,10 @@ class EgyDead : Source() {
             val label = li.text().trim().ifBlank { "server" }
             Hoster(link, label)
         }.distinctBy { it.hosterUrl }
+        if (hosters.isEmpty()) {
+            throw Exception("EgyDead: no servers found on the watch page")
+        }
+        return hosters
     }
 
     override suspend fun getVideoList(hoster: Hoster): List<Video> =
