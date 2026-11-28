@@ -258,6 +258,6 @@ class AnimePahe : Source() {
         private val PLAY_URL_RE = Regex("""/play/(.+)-(\d+(?:\.\d+)?)/?$""")
         private val EP_ONCLICK_RE = Regex("""window\.location='([^']+)'""")
         private val MEGAPLAY_RE = Regex("""https://megaplay\.buzz/videojs/stream/[^"'\s\\]+""")
-        private val DATA_ID_RE = Regex("""data-id="(\d+)"""")
+        private val DATA_ID_RE = Regex("""data-id="(\d+)""")
     }
-                                       }
+}
